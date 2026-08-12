@@ -16,9 +16,3 @@ other per-CLI files.
   out, nothing else on stdout/stderr. Add `--in <repo-dir>` to set the working
   directory when invoking from elsewhere.
 - **Doctor:** pass `--cli hermes` to `doctor.mjs`.
-
-Hermes can *additionally* serve as the [career-ops-ui](https://github.com/Fighter90/career-ops-ui)
-web app's LLM provider — run its OpenAI-compatible API Server (`hermes gateway`) and
-set `HERMES_API_KEY` in the UI's **App settings**. That is a separate, optional role
-(the UI talking to a local Hermes endpoint) and is unrelated to driving career-ops
-from the Hermes CLI here.
