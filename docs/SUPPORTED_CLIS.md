@@ -13,4 +13,5 @@ Career-ops is AI-agnostic and runs on several command-line agent tools. The core
 | Qwen | `AGENTS.md` | Interactive: `qwen`. Headless/Batch: `qwen -p "prompt"` |
 | Kimi | `KIMI.md` | Interactive: `kimi` |
 | GitHub Copilot CLI | `AGENTS.md` | Headless/Batch: `copilot -p "prompt"` |
+| Hermes | `HERMES.md` | Interactive: `hermes` (or `hermes --tui`; Hermes auto-injects `AGENTS.md`, so describe the task in plain text). Headless/Batch: `hermes -z "prompt"` (add `--in <dir>` for the working directory). |
 | Gemini | `GEMINI.md` | Legacy wrapper redirecting to `AGENTS.md` (transitioned to Antigravity CLI). |
