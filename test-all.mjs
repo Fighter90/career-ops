@@ -377,6 +377,74 @@ try {
       fail(`${name} crashed${formatRunFailure()}`);
     }
   }
+
+  // reply-watch.mjs CLI flag validation (#2743). main() used to read
+  // process.argv[2] purely positionally with no flag checking: `--help` or
+  // any typo'd flag silently became the "candidates path" argument, and
+  // since that "path" doesn't exist, ensureCandidatesFile() created a real
+  // file named e.g. `--help` on disk. Mirrors the scan-ats-full.mjs
+  // KNOWN_FLAGS precedent (#1633/#1635): --help/-h print usage and exit 0,
+  // any other flag-looking arg is rejected with exit 1 — neither path
+  // should ever touch the filesystem.
+  {
+    const replyWatchCli = (...argv) => spawnSync(NODE, [join(scriptTmp, 'reply-watch.mjs'), ...argv], {
+      cwd: scriptTmp,
+      encoding: 'utf-8',
+      timeout: 30000,
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+
+    const helpR = replyWatchCli('--help');
+    const hR = replyWatchCli('-h');
+    const bogusR = replyWatchCli('--bogus');
+
+    const helpOk = helpR.status === 0 && /Usage:/.test(helpR.stdout)
+      && !existsSync(join(scriptTmp, '--help'));
+    const hOk = hR.status === 0 && /Usage:/.test(hR.stdout)
+      && !existsSync(join(scriptTmp, '-h'));
+    const bogusOk = bogusR.status === 1 && /unrecognized flag/.test(bogusR.stderr)
+      && bogusR.stderr.includes('--bogus') && !existsSync(join(scriptTmp, '--bogus'));
+
+    if (helpOk && hOk && bogusOk) {
+      pass('reply-watch.mjs rejects --help/-h/unrecognized flags without creating a stray candidates file (#2743)');
+    } else {
+      fail(`reply-watch.mjs flag validation broken: help=${JSON.stringify({ status: helpR.status, stdout: helpR.stdout, exists: existsSync(join(scriptTmp, '--help')) })} h=${JSON.stringify({ status: hR.status, stdout: hR.stdout, exists: existsSync(join(scriptTmp, '-h')) })} bogus=${JSON.stringify({ status: bogusR.status, stderr: bogusR.stderr, exists: existsSync(join(scriptTmp, '--bogus')) })}`);
+    }
+
+    // CodeRabbit (#2745): --help paired with an unrecognized flag must still
+    // reject — unknown-flag validation has to run before --help short-circuits,
+    // otherwise `reply-watch.mjs --help --bogus` would exit 0 instead of erroring.
+    const mixedR = replyWatchCli('--help', '--bogus');
+    const mixedOk = mixedR.status === 1 && /unrecognized flag/.test(mixedR.stderr)
+      && mixedR.stderr.includes('--bogus') && !/Usage:/.test(mixedR.stdout)
+      && !existsSync(join(scriptTmp, '--help')) && !existsSync(join(scriptTmp, '--bogus'));
+    if (mixedOk) {
+      pass('reply-watch.mjs rejects an unrecognized flag even when --help is also present (#2745)');
+    } else {
+      fail(`reply-watch.mjs --help+--bogus should still error, not exit clean: ${JSON.stringify({ status: mixedR.status, stdout: mixedR.stdout, stderr: mixedR.stderr })}`);
+    }
+
+    // Regression: the existing no-args-uses-default and explicit-path
+    // behaviors must be unchanged by the new flag-parsing gate. Both run to
+    // completion here — the copied scriptTmp tracker has zero rows, so no
+    // candidates ever match an application, no update-recommendation prompt
+    // fires, and the process exits on its own without touching stdin.
+    const defaultCandidatesFile = join(scriptTmp, 'data', 'reply-candidates.json');
+    const noArgsR = replyWatchCli();
+    const noArgsOk = noArgsR.status === 0 && existsSync(defaultCandidatesFile)
+      && /application updates need review/.test(noArgsR.stdout);
+
+    const explicitPath = join(scriptTmp, 'my-candidates.json');
+    const explicitR = replyWatchCli(explicitPath);
+    const explicitOk = explicitR.status === 0 && existsSync(explicitPath)
+      && /application updates need review/.test(explicitR.stdout);
+
+    if (noArgsOk && explicitOk) {
+      pass('reply-watch.mjs no-args-uses-default and explicit-path behaviors unchanged (#2743 regression)');
+    } else {
+      fail(`reply-watch.mjs regression broken: noArgs=${JSON.stringify({ status: noArgsR.status, exists: existsSync(defaultCandidatesFile) })} explicit=${JSON.stringify({ status: explicitR.status, exists: existsSync(explicitPath) })}`);
+    }
+  }
 } finally {
   rmSync(scriptTmp, { recursive: true, force: true });
 }
@@ -8641,6 +8709,114 @@ try {
   fail(`shared role matcher / dedup safety tests crashed: ${e.message}`);
 }
 
+// ── DEDUP FLAG VALIDATION (#2744) ─────────────────────────────────────────
+// Any argv token dedup-tracker.mjs didn't recognize used to fall straight
+// through: DRY_RUN stayed false and the script ran its real, destructive
+// merge-and-write pass. `--check` (a plausible-sounding typo for --dry-run)
+// happened for real. Same shape as scan-ats-full.mjs (#1633/#1635).
+console.log('\n🧪 Testing dedup-tracker flag validation (#2744)...');
+try {
+  const flagTmp = mkdtempSync(join(tmpdir(), 'career-ops-dedup-flags-'));
+  try {
+    mkdirSync(join(flagTmp, 'data'));
+    const tracker = join(flagTmp, 'data', 'applications.md');
+    const seedTracker =
+      '# Applications Tracker\n\n' +
+      '| # | Date | Company | Role | Score | Status | PDF | Report | Notes |\n' +
+      '|---|------|---------|------|-------|--------|-----|--------|-------|\n' +
+      '| 1 | 2026-01-08 | FlagCo | Engineer | 3.9/5 | Evaluated | ❌ | [1](../reports/001-flagco.md) | first row |\n' +
+      '| 1 | 2026-01-09 | FlagCo | Engineer | 4.2/5 | Evaluated | ❌ | [2](../reports/002-flagco.md) | exact duplicate |\n';
+    const env = { ...process.env, CAREER_OPS_TRACKER: tracker };
+
+    // --help / -h: print usage, exit 0, do not touch the tracker.
+    writeFileSync(tracker, seedTracker);
+    const helpResult = run(NODE, ['dedup-tracker.mjs', '--help'], { env });
+    if (helpResult !== null && /Usage:.*dedup-tracker\.mjs/.test(helpResult)) {
+      pass('dedup-tracker --help prints usage and exits 0');
+    } else {
+      fail(`dedup-tracker --help should print usage and exit 0, got: ${JSON.stringify(helpResult)}`);
+    }
+    if (readFileSync(tracker, 'utf-8') === seedTracker) {
+      pass('dedup-tracker --help does not run the dedup/write pass');
+    } else {
+      fail('dedup-tracker --help mutated the tracker — it must exit before any write path');
+    }
+
+    const hResult = run(NODE, ['dedup-tracker.mjs', '-h'], { env });
+    if (hResult !== null && /Usage:.*dedup-tracker\.mjs/.test(hResult)) {
+      pass('dedup-tracker -h prints usage and exits 0');
+    } else {
+      fail(`dedup-tracker -h should print usage and exit 0, got: ${JSON.stringify(hResult)}`);
+    }
+
+    // Unrecognized flag (the #2744 repro: --check, a plausible typo for
+    // --dry-run): must error, exit 1, and — critically — never reach the
+    // write path.
+    writeFileSync(tracker, seedTracker);
+    const checkResult = run(NODE, ['dedup-tracker.mjs', '--check'], { env });
+    const checkFailure = lastRunFailure();
+    if (checkResult === null && checkFailure?.status === 1 && /unrecognized flag/i.test(checkFailure.stderr)) {
+      pass('dedup-tracker --check (unrecognized flag) errors and exits 1 (#2744 repro)');
+    } else {
+      fail(`dedup-tracker --check should error and exit 1 with an "unrecognized flag" message: ${formatRunFailure()}`);
+    }
+    if (readFileSync(tracker, 'utf-8') === seedTracker) {
+      pass('dedup-tracker --check does NOT run the live write path — tracker untouched (#2744)');
+    } else {
+      fail('dedup-tracker --check mutated the tracker — the #2744 bug is still live');
+    }
+
+    // CodeRabbit (#2746): --help combined with an unrecognized flag must
+    // still reject — unknown-flag validation has to run before --help
+    // short-circuits, otherwise `dedup-tracker.mjs --help --check` would
+    // exit 0 instead of erroring.
+    writeFileSync(tracker, seedTracker);
+    const mixedResult = run(NODE, ['dedup-tracker.mjs', '--help', '--check'], { env });
+    const mixedFailure = lastRunFailure();
+    if (mixedResult === null && mixedFailure?.status === 1 && /unrecognized flag/i.test(mixedFailure.stderr)
+        && !/Usage:/.test(mixedFailure.stdout || '')) {
+      pass('dedup-tracker --help --check still rejects the unrecognized flag (#2746)');
+    } else {
+      fail(`dedup-tracker --help+--check should still error, not exit clean: ${formatRunFailure()}`);
+    }
+    if (readFileSync(tracker, 'utf-8') === seedTracker) {
+      pass('dedup-tracker --help --check does NOT run the live write path — tracker untouched (#2746)');
+    } else {
+      fail('dedup-tracker --help --check mutated the tracker — the #2746 ordering bug is still live');
+    }
+
+    // Regression: --dry-run must still work exactly as before (previews,
+    // does not write).
+    writeFileSync(tracker, seedTracker);
+    const dryRunResult = run(NODE, ['dedup-tracker.mjs', '--dry-run'], { env });
+    if (dryRunResult === null) {
+      fail('dedup-tracker.mjs --dry-run crashed after the flag-validation fix');
+    } else if (readFileSync(tracker, 'utf-8') === seedTracker) {
+      pass('dedup-tracker --dry-run still previews without writing (regression)');
+    } else {
+      fail('dedup-tracker --dry-run wrote to the tracker — regression');
+    }
+
+    // Regression: no-flags (real run) must still merge the exact duplicate.
+    writeFileSync(tracker, seedTracker);
+    const liveResult = run(NODE, ['dedup-tracker.mjs'], { env });
+    if (liveResult === null) {
+      fail('dedup-tracker.mjs (no flags) crashed after the flag-validation fix');
+    } else {
+      const engineerRows = readFileSync(tracker, 'utf-8').split('\n').filter(l => l.includes('| Engineer |'));
+      if (engineerRows.length === 1 && engineerRows[0].includes('4.2/5')) {
+        pass('dedup-tracker (no flags) still merges an exact duplicate live (regression)');
+      } else {
+        fail(`dedup-tracker (no flags) live-run regression: ${engineerRows.length} Engineer rows`);
+      }
+    }
+  } finally {
+    rmSync(flagTmp, { recursive: true, force: true });
+  }
+} catch (e) {
+  fail(`dedup-tracker flag validation tests crashed: ${e.message}`);
+}
+
 // ── DEDUP BLIND-VIA CHANNEL KEY: NON-LATIN AGENCIES (#2393) ──────────────
 // Unknown-employer rows (Company `?`) group by their Via channel. dedup-tracker
 // keyed that group with the file-local normalizeCompany(), which strips
@@ -10540,10 +10716,20 @@ try {
     fail('doctor Playwright MCP guidance is still Claude-specific or lost config detection');
   }
 
+  // doctor also accepts a Playwright MCP server provided by an installed Claude
+  // Code plugin, which lives in the user's config dir rather than the --target
+  // project (#2752). Pin CLAUDE_CONFIG_DIR at an empty dir so these assertions
+  // describe the fixture and not whichever plugins the developer happens to
+  // have enabled; without it "no MCP config" is false on a real machine and the
+  // warning assertion below fails. Same reasoning as the GIT_CONFIG_* pinning
+  // in section 12c.
+  const emptyClaudeCfg = mkdtempSync(join(tmpdir(), 'co-emptycfg-'));
+  const doctorEnv = { env: { ...process.env, CLAUDE_CONFIG_DIR: emptyClaudeCfg } };
+
   // No project MCP config → doctor surfaces a (non-fatal) warning instead of
   // letting SPA job boards fail silently.
   const noMcp = mkdtempSync(join(tmpdir(), 'co-nomcp-'));
-  const a = JSON.parse(run(NODE, ['doctor.mjs', '--json', '--target', noMcp]) || '{}');
+  const a = JSON.parse(run(NODE, ['doctor.mjs', '--json', '--target', noMcp], doctorEnv) || '{}');
   if (Array.isArray(a.warnings) && a.warnings.some((w) => /playwright mcp/i.test(w))) {
     pass('No Playwright MCP config → warning surfaced');
   } else {
@@ -10558,7 +10744,7 @@ try {
     join(withMcp, '.claude', 'settings.json'),
     JSON.stringify({ mcpServers: { playwright: { command: 'npx', args: ['@playwright/mcp', '--headless'] } } }),
   );
-  const b = JSON.parse(run(NODE, ['doctor.mjs', '--json', '--target', withMcp]) || '{}');
+  const b = JSON.parse(run(NODE, ['doctor.mjs', '--json', '--target', withMcp], doctorEnv) || '{}');
   if (Array.isArray(b.warnings) && !b.warnings.some((w) => /playwright mcp/i.test(w))) {
     pass('Playwright MCP configured → no warning');
   } else {
@@ -10573,13 +10759,14 @@ try {
     join(withLocalMcp, '.claude', 'settings.local.json'),
     JSON.stringify({ mcpServers: { browser: { command: 'npx', args: ['@playwright/mcp'] } } }),
   );
-  const c = JSON.parse(run(NODE, ['doctor.mjs', '--json', '--target', withLocalMcp]) || '{}');
+  const c = JSON.parse(run(NODE, ['doctor.mjs', '--json', '--target', withLocalMcp], doctorEnv) || '{}');
   if (Array.isArray(c.warnings) && !c.warnings.some((w) => /playwright mcp/i.test(w))) {
     pass('Playwright MCP configured via .claude/settings.local.json → no warning');
   } else {
     fail(`Did not expect a Playwright MCP warning for settings.local.json, got: ${JSON.stringify(c.warnings)}`);
   }
   rmSync(withLocalMcp, { recursive: true, force: true });
+  rmSync(emptyClaudeCfg, { recursive: true, force: true });
 } catch (e) {
   fail(`Playwright MCP detection test crashed: ${e.message}`);
 }
