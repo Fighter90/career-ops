@@ -267,6 +267,7 @@ const scripts = [
   { name: 'company-funded.mjs --self-test', expectExit: 0 },
   { name: 'invite-match.mjs --self-test', expectExit: 0 },
   { name: 'invite-match.test.mjs', expectExit: 0 },
+  { name: 'tracker-sync-check.mjs --self-test', expectExit: 0 },
   { name: 'updater-migration-tests.mjs', expectExit: 0 },
   { name: 'tracker-columns-tests.mjs', expectExit: 0 },
   { name: 'agent-inbox-tests.mjs', expectExit: 0 },
@@ -771,6 +772,22 @@ try {
     const cvWdLive = await checkLivenessViaApi(wdUrl);
     globalThis.fetch = async () => ({ status: 404 });
     const cvWdGone = await checkLivenessViaApi(wdUrl);
+    // Lever: unlike Greenhouse/Workday, a 404 on the public postings API is NOT
+    // authoritative proof of removal. Lever's Confidential/Internal Postings
+    // feature explicitly excludes some live postings from the public API while
+    // the direct jobs.lever.co page keeps serving them (real-world repro:
+    // Simbe Robotics and Enable postings, 2026-08-09 — api.lever.co 404s, the
+    // live page renders the real title with a working Apply control). So a
+    // Lever 404/410 must fall through to Playwright (null), not conclude
+    // expired outright, the same "let the browser decide" treatment other
+    // ambiguous cases already get.
+    const lvUrl = 'https://jobs.lever.co/acme/abc-123-def';
+    globalThis.fetch = async () => ({ status: 200 });
+    const cvLvLive = await checkLivenessViaApi(lvUrl);
+    globalThis.fetch = async () => ({ status: 404 });
+    const cvLvGone = await checkLivenessViaApi(lvUrl);
+    globalThis.fetch = async () => ({ status: 410 });
+    const cvLvGone410 = await checkLivenessViaApi(lvUrl);
     if (cvAshbyLive?.result === 'active' && cvAshbyLive?.code === 'ashby_api_ok'
         && cvAshbyGone?.result === 'expired' && cvAshbyGone?.code === 'ashby_api_unlisted'
         && cvAshbyMalformed === null
@@ -782,6 +799,13 @@ try {
       pass('checkLivenessViaApi: 200→interpret (Ashby), malformed→null, greenhouse/workday 200→active, 404→expired, fetch error→null');
     } else {
       fail(`checkLivenessViaApi wrong: ashbyLive=${JSON.stringify(cvAshbyLive)} ashbyGone=${JSON.stringify(cvAshbyGone)} malformed=${JSON.stringify(cvAshbyMalformed)} ghLive=${JSON.stringify(cvGhLive)} gone=${JSON.stringify(cvGone)} err=${JSON.stringify(cvErr)} wdLive=${JSON.stringify(cvWdLive)} wdGone=${JSON.stringify(cvWdGone)}`);
+    }
+    if (cvLvLive?.result === 'active' && cvLvLive?.code === 'lever_api_ok'
+        && cvLvGone === null
+        && cvLvGone410 === null) {
+      pass('checkLivenessViaApi: Lever 200→active, 404/410→null (inconclusive, unlike Greenhouse/Workday — Confidential Postings can 404 on the public API while still live)');
+    } else {
+      fail(`checkLivenessViaApi (Lever) wrong: live=${JSON.stringify(cvLvLive)} gone404=${JSON.stringify(cvLvGone)} gone410=${JSON.stringify(cvLvGone410)}`);
     }
   } finally {
     globalThis.fetch = origFetch;
@@ -7179,6 +7203,12 @@ try {
       copyFileSync(join(ROOT, 'followup-cadence.mjs'), join(e2eTmp, 'followup-cadence.mjs'));
       copyFileSync(join(ROOT, 'tracker-parse.mjs'), join(e2eTmp, 'tracker-parse.mjs'));
       copyFileSync(join(ROOT, 'tracker-aliases.json'), join(e2eTmp, 'tracker-aliases.json'));
+      // followup-cadence now derives its status aliases from templates/states.yml
+      // via tracker-utils, so the fixture has to carry both — same reason
+      // tracker-aliases.json is copied for tracker-parse.mjs (#2704).
+      copyFileSync(join(ROOT, 'tracker-utils.mjs'), join(e2eTmp, 'tracker-utils.mjs'));
+      mkdirSync(join(e2eTmp, 'templates'), { recursive: true });
+      copyFileSync(join(ROOT, 'templates', 'states.yml'), join(e2eTmp, 'templates', 'states.yml'));
       // 'junction' on Windows, not 'dir': a directory symlink needs
       // SeCreateSymbolicLinkPrivilege, which a normal shell lacks unless
       // Developer Mode is on, so this threw EPERM and failed the test on an
@@ -7644,15 +7674,48 @@ try {
     const cvPath = join(cliTmp, 'cv.md');
     const adPath = join(cliTmp, 'article-digest.md');
     writeFileSync(cvPath, '# CV\n\n## Projects\n\n- **Existing** (OSS) -- here\n');
-    const payloadPath = join(cliTmp, 'p.json');
-    writeFileSync(payloadPath, JSON.stringify({
+    const payloadPath = join(cliTmp, 'payload-with-dash.json');
+    const cliPayload = {
       cv: { section: 'Projects', dedupKey: 'CliProj', entry: '- **CliProj** (OSS) -- desc' },
       articleDigest: { dedupKey: 'CliProj', entry: '## CliProj -- Tagline\n\n**Hero metrics:** x' },
-    }));
+    };
+    writeFileSync(payloadPath, JSON.stringify(cliPayload));
     const env = { ...process.env, CAREER_OPS_CV: cvPath, CAREER_OPS_ARTICLE_DIGEST: adPath };
 
+    const helpOut = spawnSync(NODE, [join(ROOT, 'add-entry.mjs'), '--help'], { env, encoding: 'utf-8' });
+    const hOut = spawnSync(NODE, [join(ROOT, 'add-entry.mjs'), '-h'], { env, encoding: 'utf-8' });
+    if (helpOut.status === 0 && hOut.status === 0 &&
+        helpOut.stdout.includes('Usage:') && helpOut.stdout.includes('--stdin') &&
+        hOut.stdout === helpOut.stdout) {
+      pass('add-entry CLI --help/-h print usage and exit 0');
+    } else {
+      fail(`add-entry CLI help handling => ${JSON.stringify({ help: { status: helpOut.status, stdout: helpOut.stdout, stderr: helpOut.stderr }, h: { status: hOut.status, stdout: hOut.stdout, stderr: hOut.stderr } })}`);
+    }
+
+    const missingPayloadPath = join(cliTmp, 'missing-payload.json');
+    const badFlag = spawnSync(NODE, [join(ROOT, 'add-entry.mjs'), missingPayloadPath, '--sumary'], { env, encoding: 'utf-8' });
+    if (badFlag.status === 1 && badFlag.stderr.includes('--sumary') && badFlag.stderr.includes('Usage:') &&
+        !badFlag.stderr.includes('could not parse payload') &&
+        !readFileSync(cvPath, 'utf-8').includes('CliProj') && !existsSync(adPath)) {
+      pass('add-entry CLI rejects an unrecognized flag before reading or writing payload data');
+    } else {
+      fail(`add-entry CLI unknown flag handling => ${JSON.stringify({ status: badFlag.status, stdout: badFlag.stdout, stderr: badFlag.stderr })}`);
+    }
+
+    const stdinDryRun = spawnSync(NODE, [join(ROOT, 'add-entry.mjs'), '--stdin', '--dry-run'], {
+      env,
+      encoding: 'utf-8',
+      input: JSON.stringify(cliPayload),
+    });
+    if (stdinDryRun.status === 0 && JSON.parse(stdinDryRun.stdout).dryRun === true &&
+        !readFileSync(cvPath, 'utf-8').includes('CliProj') && !existsSync(adPath)) {
+      pass('add-entry CLI keeps --stdin and --dry-run working together');
+    } else {
+      fail(`add-entry CLI --stdin --dry-run => ${JSON.stringify({ status: stdinDryRun.status, stdout: stdinDryRun.stdout, stderr: stdinDryRun.stderr })}`);
+    }
+
     execFileSync(NODE, [join(ROOT, 'add-entry.mjs'), payloadPath, '--dry-run'], { env, encoding: 'utf-8' });
-    if (!readFileSync(cvPath, 'utf-8').includes('CliProj') && !existsSync(adPath)) pass('add-entry CLI --dry-run writes nothing');
+    if (!readFileSync(cvPath, 'utf-8').includes('CliProj') && !existsSync(adPath)) pass('add-entry CLI --dry-run writes nothing and accepts a payload path containing dashes');
     else fail('add-entry CLI --dry-run should not write');
 
     const realOut = JSON.parse(execFileSync(NODE, [join(ROOT, 'add-entry.mjs'), payloadPath], { env, encoding: 'utf-8' }));
@@ -8156,6 +8219,95 @@ try {
   }
 } catch (e) {
   fail(`verify-pipeline report checks crashed: ${e.message}`);
+}
+
+// ── VERIFY-PIPELINE, THE ALPHABET THE FIXTURE ABOVE DOES NOT COVER ──────
+// The fixture above proves the duplicate MECHANISM works. Every string in it
+// is ASCII, so it cannot tell "the detector works" apart from "the detector
+// works for Latin names" — and the difference is not academic. `İ`.toLowerCase()
+// yields `i` + U+0307 (a combining dot that survives normalization), so
+// `İstanbul Tekstil` and `Istanbul Tekstil` key differently and the duplicate
+// goes UNDETECTED. That is the opposite failure to the one fixed in #2393,
+// where every non-Latin name collapsed to '' and everything collided: that was
+// loud and got fixed. This one is silent, and it is the integrity checker
+// itself that returns the green.
+//
+// THIS TEST PINS TODAY'S BEHAVIOR ON PURPOSE. It is not an endorsement: the
+// targeted fix (strip U+0307 after lowercasing) is measured and does NOT touch
+// Škoda/Nestlé/Zürich, but normalizeTextKey is a frozen contract surface with
+// eight production consumers plus the web mirror, so applying it is a
+// coordinated decision, not a drive-by. If you are here because this assertion
+// failed, you did not break anything: you changed that decision. Invert the
+// expectation, update tests/fixtures/company-key-corpus.json, and land it in
+// lockstep with the web.
+console.log('\n🧪 Testing verify-pipeline duplicate detection across alphabets...');
+try {
+  const tkTmp = mkdtempSync(join(tmpdir(), 'career-ops-verify-turkish-'));
+  try {
+    const tkReports = join(tkTmp, 'reports');
+    mkdirSync(tkReports, { recursive: true });
+    const tkTracker = join(tkTmp, 'applications.md');
+    const tkEnv = { ...process.env, CAREER_OPS_TRACKER: tkTracker, CAREER_OPS_REPORTS: tkReports };
+    const tkReport = (company, role) =>
+      `# Evaluación: ${company} — ${role}\n\n## Machine Summary\n\n\`\`\`yaml\ncompany: "${company}"\nrole: "${role}"\nscore: 4.0\n\`\`\`\n`;
+
+    // Same employer, same role, two spellings a Turkish user types interchangeably.
+    writeFileSync(join(tkReports, '001-istanbul-2026-02-01.md'), tkReport('İstanbul Tekstil', 'Yazılım Mühendisi'));
+    writeFileSync(join(tkReports, '002-istanbul-2026-02-02.md'), tkReport('Istanbul Tekstil', 'Yazılım Mühendisi'));
+    writeFileSync(tkTracker,
+      '# Applications Tracker\n\n' +
+      '| # | Date | Company | Role | Score | Status | PDF | Report | Notes |\n' +
+      '|---|------|---------|------|-------|--------|-----|--------|-------|\n' +
+      '| 1 | 2026-02-01 | İstanbul Tekstil | Yazılım Mühendisi | 4.0/5 | Evaluated | ❌ | [1](reports/001-istanbul-2026-02-01.md) | ok |\n' +
+      '| 2 | 2026-02-02 | Istanbul Tekstil | Yazılım Mühendisi | 4.0/5 | Evaluated | ❌ | [2](reports/002-istanbul-2026-02-02.md) | ok |\n');
+
+    const tkOut = run(NODE, ['verify-pipeline.mjs'], { env: tkEnv, stdio: ['pipe', 'pipe', 'pipe'] });
+    if (tkOut === null) {
+      fail('verify-pipeline crashed on the Turkish dotted-I fixture');
+    } else {
+      // Check 2 reads the tracker's own Company column, where the two spellings
+      // survive intact, so this is the one the dotted I blinds.
+      // Decision changed 12-ago (Santiago): the targeted fix landed, so the
+      // tracker check now folds the dotted I and DOES catch the duplicate.
+      // Left pinned in the opposite direction so a revert is loud.
+      if (/Possible duplicates/.test(tkOut)) {
+        pass('tracker dup check (Check 2) now folds the dotted I and catches the duplicate');
+      } else {
+        fail('dotted-I tracker duplicate no longer detected: the targeted fix regressed (see company-key-corpus.json)');
+      }
+      // …while Check 9 groups reports by the FILENAME slug, which is already
+      // ASCII by the time a report is written, so it flags the very same pair.
+      // The comment above `const normalizeKey = normalizeTextKey` promises the
+      // two checks "can never disagree about whether two roles are the same".
+      // They can, and here they do: sharing the function is not sharing the
+      // INPUT. Pinned so the contradiction is visible in CI instead of living
+      // only in a maintainer's notes.
+      if (/Duplicate reports[^\n]*001-istanbul/.test(tkOut)) {
+        pass('report dup check (Check 9) DOES flag the same pair — the two checks disagree, contrary to the guarantee written at its definition');
+      } else {
+        fail('Check 9 no longer flags the pair: the two checks now agree, so update the note at `const normalizeKey = normalizeTextKey`');
+      }
+    }
+    // The control that makes the assertions above mean something: within one
+    // spelling the tracker check must still fire, or "not detected" would prove
+    // nothing about the alphabet and everything about a broken fixture.
+    writeFileSync(tkTracker,
+      '# Applications Tracker\n\n' +
+      '| # | Date | Company | Role | Score | Status | PDF | Report | Notes |\n' +
+      '|---|------|---------|------|-------|--------|-----|--------|-------|\n' +
+      '| 1 | 2026-02-01 | İstanbul Tekstil | Yazılım Mühendisi | 4.0/5 | Evaluated | ❌ | [1](reports/001-istanbul-2026-02-01.md) | ok |\n' +
+      '| 2 | 2026-02-02 | İstanbul Tekstil | Yazılım Mühendisi | 4.0/5 | Evaluated | ❌ | [2](reports/002-istanbul-2026-02-02.md) | ok |\n');
+    const tkCtl = run(NODE, ['verify-pipeline.mjs'], { env: tkEnv, stdio: ['pipe', 'pipe', 'pipe'] });
+    if (tkCtl !== null && /Possible duplicates/.test(tkCtl)) {
+      pass('same-spelling Turkish duplicate IS caught by Check 2 (control: the fixture exercises the real path)');
+    } else {
+      fail('control failed: two identical Turkish rows were not flagged, so the fixture proves nothing');
+    }
+  } finally {
+    rmSync(tkTmp, { recursive: true, force: true });
+  }
+} catch (e) {
+  fail(`verify-pipeline alphabet checks crashed: ${e.message}`);
 }
 
 // ── VERIFY-PIPELINE ORPHAN REFERENCE RESOLUTION (#1425 follow-up) ────────────
@@ -9553,6 +9705,128 @@ try {
   }
 } catch (e) {
   fail(`non-Latin via guard tests crashed: ${e.message}`);
+}
+
+// ── GO STATUS LITERALS MUST BE states.yml ALIASES (#2704) ─────────
+// The Go dashboard's NormalizeStatus grew its own, larger alias table: it knew
+// every Turkish spelling while states.yml did not, so ONE tracker row
+// normalized three different ways — the TUI read `Mülakat` as interview, the
+// core left it as `mülakat` (matching no ACTIONABLE/ADVANCED set, so the row
+// vanished from the funnel), and the web rejected it on writeback. We ship
+// modes/tr/, so this was live for Turkish users.
+//
+// Guard the direction that actually drifts: every status literal Go matches on
+// must be resolvable through states.yml. Go may still hold MORE matching logic
+// (it uses substring Contains for some), but it must not know a spelling the
+// source of truth has never heard of.
+console.log('\n🧪 Testing Go status literals against states.yml (#2704)...');
+try {
+  const { loadCanonicalStates } = await import(pathToFileURL(join(ROOT, 'tracker-utils.mjs')).href);
+  const states = loadCanonicalStates(join(ROOT, 'templates', 'states.yml'));
+  const known = new Set();
+  for (const st of states) {
+    known.add(st.id.toLowerCase());
+    if (st.label) known.add(st.label.toLowerCase());
+    for (const a of st.aliases) known.add(String(a).toLowerCase());
+  }
+
+  const goPath = join(ROOT, 'dashboard', 'internal', 'data', 'career.go');
+  if (!existsSync(goPath)) {
+    pass('dashboard/internal/data/career.go absent — Go status guard skipped');
+  } else {
+    const go = readFileSync(goPath, 'utf-8');
+    const fnStart = go.indexOf('func NormalizeStatus');
+    const body = fnStart === -1 ? '' : go.slice(fnStart, go.indexOf('\nfunc ', fnStart + 1));
+    // Only the literals used for status matching (== or Contains), not any
+    // other string in the function.
+    const literals = [...body.matchAll(/(?:s == |Contains\(s, )"([^"]+)"/g)].map((m) => m[1].toLowerCase());
+    const unknown = [...new Set(literals)].filter((l) => !known.has(l));
+    if (literals.length === 0) {
+      fail('could not extract any status literals from Go NormalizeStatus — the guard is not actually checking anything (#2704)');
+    } else if (unknown.length === 0) {
+      pass(`every Go status literal (${new Set(literals).size}) resolves through states.yml (#2704)`);
+    } else {
+      fail(`Go NormalizeStatus knows spellings states.yml does not — add them to templates/states.yml: ${unknown.join(', ')}`);
+    }
+  }
+} catch (e) {
+  fail(`Go status literal guard crashed: ${e.message}`);
+}
+
+// ── TURKISH DOTTED-CAPITAL CASING (#2704 review) ──────────────────
+// JS lowercases `İ` (U+0130) to `i` + COMBINING DOT ABOVE (U+0307) and the mark
+// survives, so `TEKLİF` became `tekli\u0307f` and matched no alias. Uppercase
+// status words are ordinary in Turkish, so every all-caps Turkish row missed.
+// foldStatusInput drops U+0307 after lowercasing, which repairs 31 of the 32
+// affected spellings at once; the 32nd (`İŞE ALINDI`, where dotless `ı`
+// uppercases to `I` and lowercases back to dotted `i`) is covered by an alias.
+console.log('\n🧪 Testing Turkish uppercase status resolution (#2704)...');
+try {
+  const { loadCanonicalStates, foldStatusInput } = await import(pathToFileURL(join(ROOT, 'tracker-utils.mjs')).href);
+  const { normalizeStatus: cadenceNorm } = await import(pathToFileURL(join(ROOT, 'followup-cadence.mjs')).href);
+  const states = loadCanonicalStates(join(ROOT, 'templates', 'states.yml'));
+
+  // The fold must not be able to collapse two different states: no canonical
+  // id/label/alias may itself contain U+0307.
+  const marked = [];
+  for (const st of states) {
+    for (const v of [st.id, st.label, ...st.aliases]) {
+      if (String(v).normalize('NFD').includes('\u0307')) marked.push(`${st.id}:${v}`);
+    }
+  }
+  marked.length === 0
+    ? pass('no canonical state value carries U+0307, so the fold cannot merge two states (#2704)')
+    : fail(`a canonical value contains U+0307 — folding it could collapse states: ${marked.join(', ')}`);
+
+  // Every value, in every casing a user can produce, resolves to its own state.
+  const misses = [];
+  for (const st of states) {
+    for (const v of [st.id, st.label, ...st.aliases]) {
+      for (const typed of [String(v), String(v).toLocaleUpperCase('tr'), String(v).toUpperCase()]) {
+        if (cadenceNorm(typed) !== st.id) misses.push(`${JSON.stringify(typed)}->${cadenceNorm(typed)} (want ${st.id})`);
+      }
+    }
+  }
+  misses.length === 0
+    ? pass('every state resolves from its as-written, Turkish-uppercase and plain-uppercase spellings (#2704)')
+    : fail(`${misses.length} spelling(s) do not resolve: ${misses.slice(0, 6).join(', ')}`);
+
+  // The specific reproductions from the review.
+  const cases = [['TEKLİF', 'offer'], ['DEĞERLENDİRİLDİ', 'evaluated'], ['KABUL EDİLDİ', 'hired'], ['İŞE ALINDI', 'hired']];
+  const wrong = cases.filter(([raw, want]) => cadenceNorm(raw) !== want);
+  wrong.length === 0
+    ? pass('the all-caps Turkish cases from the #2704 review resolve correctly')
+    : fail(`all-caps Turkish still failing: ${wrong.map(([r, w]) => `${r}->${cadenceNorm(r)} (want ${w})`).join(', ')}`);
+
+  // PAIR SEMANTICS, not implementation. The assertions above prove the fold
+  // repairs Turkish; they say nothing about what else it reaches. 462d2765
+  // shipped this same fold as NFD -> strip -> NFC on the company key, which
+  // also decomposed the PRECOMPOSED dots of z-dot, e-dot and g-dot and
+  // collapsed Zubr/Zubr, Eme/Eme and Generali/Generali -- Polish, Lithuanian
+  // and Maltese losing a distinction with every existing test still green
+  // (undone in 5df43e7). The status fold carried the identical defect; these
+  // pin the OUTCOME rather than the implementation.
+  {
+    const pairs = [
+      ['TEKL\u0130F', 'teklif', true, 'Turkish dotted capital: the dot is a casing artifact'],
+      ['KABUL ED\u0130LD\u0130', 'kabul edildi', true, 'same artifact, multi-word'],
+      ['\u017Bubr', 'Zubr', false, 'Polish z-dot: the dot is a letter the user typed'],
+      ['\u0116m\u0117', 'Eme', false, 'Lithuanian e-dot: same class'],
+      ['\u0120enerali', 'Generali', false, 'Maltese g-dot'],
+      ['\u0160koda', 'Skoda', false, 'caron typed by the user'],
+      ['Nestl\u00E9', 'Nestle', false, 'accent typed by the user'],
+    ];
+    const wrong = pairs.filter(([a, b, mustMatch]) => (foldStatusInput(a) === foldStatusInput(b)) !== mustMatch);
+    wrong.length === 0
+      ? pass('foldStatusInput folds the casing artifact only - typed dots and accents still separate (#2704)')
+      : fail(`foldStatusInput pair semantics wrong: ${wrong.map(([a, b, m]) => `${a}/${b} expected ${m ? 'match' : 'differ'}`).join('; ')}`);
+  }
+
+  foldStatusInput('TEKLİF') === 'teklif'
+    ? pass('foldStatusInput strips the combining dot JS introduces (#2704)')
+    : fail(`foldStatusInput('TEKLİF') = ${JSON.stringify(foldStatusInput('TEKLİF'))}, expected "teklif"`);
+} catch (e) {
+  fail(`Turkish casing guard crashed: ${e.message}`);
 }
 
 // ── MERGE-TRACKER: DISTINCT NON-LATIN COMPANIES (#2429) ───────────
@@ -13241,9 +13515,8 @@ try {
     { file: 'web/src/app/actions/registry.ts', re: /TAB_VALUES\s*=\s*\[([\s\S]*?)\]/, upper: true, exclude: [] },
     { file: 'web/src/components/pipeline-view.tsx', re: /TABS\s*=\s*\[([\s\S]*?)\]/, upper: true, exclude: [] },
     { file: 'web/src/app/analytics/page.tsx', re: /STAGES[^=]*=\s*\[([\s\S]*?)\];/, upper: true, exclude: ['SKIP'] },
-    // 55.3b+ the degraded-path FALLBACK in the states ACL (career-ops-ui's find, #2282):
-    // it promises to mirror states.yml and drifted to 8 states while the live path had 9.
-    { file: 'web/src/lib/core/states.ts', re: /const FALLBACK[^=]*=\s*\[([\s\S]*?)\n\];/, upper: false, exclude: [] },
+    // The states ACL used to be checked here too. It moved to its own block
+    // below, because it now has TWO valid shapes and this table only knows one.
   ];
   if (stateLabels.length > 0) {
     const drift = [];
@@ -13260,6 +13533,48 @@ try {
       pass('every web status list covers all canonical states from states.yml (#2249)');
     } else {
       fail(`web status list(s) missing canonical state(s) — dashboard can't set/count them (#2249): ${drift.join(' | ')}`);
+    }
+
+    // 55.3b+ the degraded-path FALLBACK in the states ACL (career-ops-ui's
+    // find, #2282). It promised to mirror states.yml, drifted to 8 states
+    // while the live path had 9, and later to 31 missing aliases (#2705).
+    //
+    // TWO shapes are correct and this asserts both, because the earlier
+    // version asserted only the first and therefore turned a genuine
+    // improvement into a red build: either (a) the literal table is present
+    // and complete, or (b) there is NO table because the fallback derives
+    // from CANONICAL_STATES, which the check above already freezes against
+    // states.yml. Deriving from something already frozen beats guarding a
+    // copy — the copy you delete cannot drift.
+    //
+    // The shape that must never pass is a literal table that is INCOMPLETE.
+    // That is the only one that fails silently: a state missing from the
+    // fallback reads exactly like a state the product does not have.
+    const aclPath = join(ROOT, 'web', 'src', 'lib', 'core', 'states.ts');
+    if (existsSync(aclPath)) {
+      const aclSrc = readFileSync(aclPath, 'utf-8');
+      const literal = aclSrc.match(/const FALLBACK[^=]*=\s*\[([\s\S]*?)\n\];/)?.[1];
+      if (literal !== undefined) {
+        const present = new Set([...literal.matchAll(/"([A-Za-z]+)"/g)].map((m) => m[1]));
+        const missing = stateLabels.filter((l) => !present.has(l));
+        if (missing.length) {
+          fail(`states ACL FALLBACK is missing canonical state(s) it claims to mirror (#2282): ${missing.join(', ')}`);
+        } else {
+          pass('states ACL FALLBACK carries every canonical state (#2282)');
+        }
+        // Assert the ASSIGNMENT, not the appearance of the name. `/CANONICAL_STATES/`
+        // over the whole file was satisfied by the header COMMENT, i.e. by prose,
+        // and worse: the literal regex above is a brittle syntactic match (that
+        // exact name, that exact shape), so routing its miss here flipped its
+        // failure direction from red to green. A reformat or a rename would have
+        // passed silently with seven states unaccounted for. A future legitimate
+        // form (`= buildFrom(CANONICAL_STATES)`) fails this on purpose: widening
+        // the guard should be a decision, not a silence. (career-ops-ui's find.)
+      } else if (/const FALLBACK[^=]*=\s*CANONICAL_STATES\b/.test(aclSrc)) {
+        pass('states ACL fallback derives from the frozen CANONICAL_STATES instead of copying states.yml (#2282)');
+      } else {
+        fail('states ACL has neither a complete FALLBACK table nor a derivation from CANONICAL_STATES — the degraded path can now drift unwatched (#2282)');
+      }
     }
 
     // The assistant preamble also enumerates the states in PROSE (the setStatus
@@ -13638,6 +13953,41 @@ try {
           pass(`web company-key mirror matches the core on all ${inputs.length} corpus cases x2 separators (#2666)`);
         } else {
           fail(`web company-key mirror DRIFTED from the core — ${drift.length} case(s): ${drift.slice(0, 3).join(' | ')}`);
+        }
+
+        // 55.7b PAIR SEMANTICS — what parity alone cannot see.
+        // The comparison above proves core and mirror AGREE. It says nothing
+        // about whether they agree on the RIGHT answer: two identical wrong
+        // implementations pass it silently. That is not hypothetical — on
+        // 12-ago the Turkish dotted-I fix shipped as NFD → strip U+0307 → NFC,
+        // which also decomposed the PRECOMPOSED dots of ż, ė and ġ and
+        // collapsed Żubr/Zubr, Ėmė/Eme and Ġenerali/Generali. Both sides were
+        // equally wrong, so parity stayed green and the corpus (which had no
+        // dotted-letter case) could not fail either. Polish, Lithuanian and
+        // Maltese employers silently became one key with their ASCII spelling.
+        // These assertions fix the OUTCOME, not the implementation.
+        const pairs = [
+          // [a, b, mustMatch, why]
+          ['İstanbul Tekstil', 'Istanbul Tekstil', true, 'Turkish dotted capital: the dot is an artifact of toLowerCase, not typed'],
+          ['Türk İlaç', 'Türk Ilaç', true, 'same artifact mid-word'],
+          ['Żubr', 'Zubr', false, 'Polish ż: the dot is a letter the user typed'],
+          ['Ėmė', 'Eme', false, 'Lithuanian ė: same class as ż'],
+          ['Ġenerali', 'Generali', false, 'Maltese ġ, and Generali is a different real company'],
+          ['Škoda', 'Skoda', false, 'the original collision this key exists to prevent'],
+          ['Nestlé', 'Nestle', false, 'accent typed by the user'],
+          ['İŞ BANKASI', 'Is Bankasi', false, 'Ş is a different letter, not a casing artifact'],
+        ];
+        const wrong = [];
+        for (const [a, b, mustMatch, why] of pairs) {
+          const matched = coreFn(a, '') === coreFn(b, '');
+          if (matched !== mustMatch) {
+            wrong.push(`${JSON.stringify(a)} vs ${JSON.stringify(b)}: ${matched ? 'match' : 'differ'}, expected ${mustMatch ? 'match' : 'differ'} (${why})`);
+          }
+        }
+        if (wrong.length === 0) {
+          pass(`company-key pair semantics hold on all ${pairs.length} pairs (casing artifacts fold, typed marks do not)`);
+        } else {
+          fail(`company-key pair semantics BROKEN — ${wrong.length}: ${wrong.slice(0, 3).join(' | ')}`);
         }
         // Guard of the guard, in TWO directions, because each covers a hole the
         // other cannot see:

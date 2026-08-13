@@ -951,6 +951,20 @@ These have no `npm run` binding — modes and agents call them with
 
 ---
 
+## process-quality.mjs
+
+Aggregates candidate-authored `[process-friction]` tags from the Notes column
+of `data/active-interviews.md` into a per-company friction signal. The tag
+stays free-text on purpose — there's no enforced taxonomy — but here are a
+few example friction patterns worth tagging, illustrative and non-exhaustive:
+
+- `[process-friction: call scheduled for a rejection with no info beyond what email would convey]`
+- `[process-friction: prescreen repeated info already given in a prior round]`
+- `[process-friction: interview rescheduled 2+ times same week]`
+- `[process-friction: no confirmation after stated timeline passed]`
+
+---
+
 ## set-status.mjs
 
 Canonical tracker write path: strict `states.yml` validation, shared lock, atomic write. Modes and agents call this instead of hand-editing `applications.md`.
