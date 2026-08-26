@@ -231,7 +231,7 @@ When choosing a budget-friendly model, you need strong reasoning capabilities to
 | **Kimi K2.5** | Moonshot AI | API pricing applies | Verified with OpenCode using the Moonshot OpenAI-compatible endpoint. Produces structured Markdown suitable for Career-Ops evaluations. See the verified OpenCode recipe below. |
 
 
-> **Standalone evaluator (no CLI config needed):** every OpenAI-compatible provider above (DeepSeek, Qwen, GLM, Together, Groq, OpenRouter, …) works directly through `node openai-eval.mjs` — just set a base URL, model, and key:
+> **Standalone evaluator (no CLI config needed):** every OpenAI-compatible provider works directly through `node openai-eval.mjs` — DeepSeek, Qwen, GLM (Z.ai / Zhipu), Kimi (Moonshot), MiniMax, Mistral, Grok (xAI), Together, Fireworks, Groq, OpenRouter, BytePlus / Volcengine Ark, and local Ollama / LM Studio / llama.cpp / vLLM. Just set a base URL, model, and key (see `node openai-eval.mjs --help` for each provider's base URL, or the ready-made `npm run <provider>:eval` scripts — `deepseek:eval`, `mistral:eval`, `grok:eval`, `ark:eval`, …):
 > ```bash
 > OPENAI_BASE_URL=https://openrouter.ai/api/v1 \
 > OPENAI_MODEL=deepseek/deepseek-chat \
