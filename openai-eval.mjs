@@ -95,8 +95,16 @@ if (args.length === 0 || args[0] === '--help' || args[0] === '-h') {
     Together:    --url https://api.together.xyz/v1     --model meta-llama/Llama-3.3-70B-Instruct-Turbo
     Groq:        --url https://api.groq.com/openai/v1  --model llama-3.3-70b-versatile
     DeepSeek:    --url https://api.deepseek.com/v1     --model deepseek-chat
-    Zhipu GLM:   --url https://open.bigmodel.cn/api/paas/v4  --model glm-4-flash
+    Zhipu GLM:   --url https://open.bigmodel.cn/api/paas/v4  --model glm-4-flash   (intl: api.z.ai/api/paas/v4)
+    Kimi:        --url https://api.moonshot.ai/v1      --model kimi-k2-0711-preview   (CN: api.moonshot.cn/v1)
+    MiniMax:     --url https://api.minimax.io/v1       --model MiniMax-Text-01
+    Mistral:     --url https://api.mistral.ai/v1       --model mistral-large-latest
+    Grok (xAI):  --url https://api.x.ai/v1             --model grok-4
+    Fireworks:   --url https://api.fireworks.ai/inference/v1  --model accounts/fireworks/models/llama-v3p3-70b-instruct
+    BytePlus Ark:   --url https://ark.ap-southeast.bytepluses.com/api/v3  --model doubao-pro-32k
+    Volcengine Ark: --url https://ark.cn-beijing.volces.com/api/v3        --model doubao-pro-32k
     LM Studio:   --url http://localhost:1234/v1        --model <loaded-model>   (no key)
+    Ollama:      --url http://localhost:11434/v1       --model llama3.2         (no key)
 
   EXAMPLES
     OPENAI_API_KEY=sk-... node openai-eval.mjs --file ./jds/job.txt
