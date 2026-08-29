@@ -125,6 +125,23 @@ try {
   } else {
     fail(`visibleText() => ${JSON.stringify(visibleText('Role <!-- ad --> <b>Dev</b><br/>Next'))}`);
   }
+  // A one-pass /<[^>]+>/g would delete everything between the two brackets and
+  // take the salary range with it — prose in a channel post is full of them.
+  const prose = 'зарплата < 300k, опыт > 3 лет';
+  if (visibleText(prose) === prose) {
+    pass('visibleText() keeps prose that merely looks like markup (< 300k … > 3 лет)');
+  } else {
+    fail(`prose eaten: ${JSON.stringify(visibleText(prose))}`);
+  }
+  // Removing the inner <b> from `<<b>script>` re-forms `<script>`, so the strip
+  // must run to a fixed point rather than once.
+  if (visibleText('<<b>script>alert(1)<<b>/script>') === 'alert(1)'
+      && visibleText('a<<b>img src=x onerror=1>b') === 'ab'
+      && !/<\/?[a-zA-Z]/.test(visibleText('<'.repeat(40) + 'a' + '>'.repeat(40)))) {
+    pass('visibleText() strips to a fixed point — a tag cannot be reassembled');
+  } else {
+    fail(`reassembly: ${JSON.stringify(visibleText('<<b>script>alert(1)<<b>/script>'))}`);
+  }
   if (titleFromText('🔥🔥🔥\n✨\nGo разработчик, удалёнка\nПишите') === 'Go разработчик, удалёнка') {
     pass('titleFromText() skips emoji dividers and takes the first substantive line');
   } else {
