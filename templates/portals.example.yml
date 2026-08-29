@@ -1289,6 +1289,12 @@ search_queries:
 #   searchLocation: Ho Chi Minh           # optional — only Ho Chi Minh's city code is verified live
 #   enabled: true                         # ~50 postings/page; 750ms pacing between pages
 #
+# - name: PHP jobs (Telegram)             # a PUBLIC Telegram channel, read via t.me/s/<handle>
+#   provider: telegram                    # no bot token, no API key — the preview is plain HTML
+#   channel: rabotaphp                    # handle, @handle or a full t.me/... link all work
+#   max_posts: 100                        # optional — default 100, hard cap 300
+#   enabled: true                         # posts are PROSE: lean on title_filter to drop ads
+#
 # - name: Hacker News "Who is hiring?"    # monthly "Ask HN: Who is hiring?" thread
 #   provider: hackernews
 #   enabled: true
