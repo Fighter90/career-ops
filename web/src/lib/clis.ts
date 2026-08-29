@@ -64,6 +64,7 @@ export const KNOWN: CliSpec[] = [
   { id: "copilot", name: "GitHub Copilot CLI", bin: "copilot", run: "copilot -p", url: "https://docs.github.com/en/copilot/github-copilot-in-the-cli", args: (p) => ["-p", p] },
   { id: "qwen", name: "Qwen CLI", bin: "qwen", run: "qwen -p", url: "https://qwen.ai/qwencode", args: (p) => ["-p", p] },
   { id: "antigravity", name: "Antigravity CLI", bin: "agy", run: "agy -p", url: "https://antigravity.google", args: (p) => ["-p", p] },
+  { id: "hermes", name: "Hermes", bin: "hermes", run: "hermes -z", url: "https://hermes-agent.nousresearch.com/docs", args: (p) => ["-z", p] },
   // Grok Build also speaks `--output-format streaming-json`, but that is its own
   // schema, not Claude's `stream-json` — and the run route only parses the
   // latter. Plain `-p` streams text, which is what every other non-Claude entry

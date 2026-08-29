@@ -327,6 +327,9 @@ const SYSTEM_PATHS = [
   'CONTRIBUTING.md',
   'MAINTAINERS.md',
   'ARCHITECTURE.md',
+  // Fork-local: documents Hermes as a supported runtime (#3). Registered here
+  // so `update-system` ships it like every other root doc.
+  'HERMES.md',
   'README.md',
   'README.ar.md',
   'README.cn.md',
