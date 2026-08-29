@@ -24,7 +24,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -206,12 +206,27 @@ const SKIP_DIRS = new Set([
   'output', 'data', 'reports', 'jds', 'documents', 'interview-prep',
 ]);
 
+/**
+ * A directory holding a `.git` entry is a checkout of a DIFFERENT repository
+ * that merely sits inside this tree — career-ops-ui is documented to live at
+ * `career-ops/web-ui`, and a contributor may clone anything else here too.
+ * Those files answer to their own conventions and their own CI, so enforcing
+ * this repository's rule on them reports a failure nobody working here can fix.
+ * `.git` is a file in a worktree or submodule and a directory in a plain clone;
+ * existsSync covers both.
+ * @param {string} dir
+ */
+function isNestedRepo(dir) {
+  return existsSync(join(dir, '.git'));
+}
+
 function walk(dir, out = []) {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     if (entry.name.startsWith('.')) continue; // .tmp-* probe dirs; no tracked dotdir ships .mjs
     const full = join(dir, entry.name);
     if (entry.isDirectory()) {
       if (SKIP_DIRS.has(entry.name)) continue;
+      if (isNestedRepo(full)) continue;
       walk(full, out);
     } else if (entry.name.endsWith('.mjs')) {
       out.push(full);
