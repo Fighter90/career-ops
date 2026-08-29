@@ -411,7 +411,21 @@ try {
     // matched by basename ONLY at the repo root, so nested fixture subdirs such
     // as test-fixtures/upgrade/state-*/data and .../reports still get copied.
     if (dirname(src) === ROOT && exclude.includes(name)) return;
-    const stat = statSync(src);
+    // A directory holding a `.git` entry is a checkout of a DIFFERENT
+    // repository that merely sits inside this tree — career-ops-ui is
+    // documented to live at `career-ops/web-ui`. Copying it doubles the
+    // fixture for files no test here reads. `.git` is a file in a worktree or
+    // submodule and a directory in a plain clone; existsSync covers both.
+    if (src !== ROOT && existsSync(join(src, '.git'))) return;
+    // A broken symlink anywhere in the workspace must not abort the whole
+    // suite: statSync follows the link and throws ENOENT. Skipping the entry
+    // keeps one stale link from costing every test.
+    let stat;
+    try {
+      stat = statSync(src);
+    } catch {
+      return;
+    }
     if (stat.isDirectory()) {
       mkdirSync(dest, { recursive: true });
       for (const entry of readdirSync(src)) {
@@ -13323,14 +13337,28 @@ function latexValidate(tex) {
   const texPath = join(dir, 'cv.tex');
   writeFileSync(texPath, tex, 'utf-8');
   let out;
+  let why = '';
   try {
     out = execFileSync(NODE, ['generate-latex.mjs', texPath], { cwd: ROOT, encoding: 'utf-8', timeout: 30000 });
   } catch (e) {
+    // Validation issues exit 1 and still print the report, so a throw is
+    // expected here. Keep WHY it threw: a kill (timeout), a signal, or a
+    // non-JSON stdout are three different failures that used to look alike.
     out = (e.stdout || '').toString();
+    why = `status=${e.status} signal=${e.signal ?? 'none'} stderr=${JSON.stringify(String(e.stderr || '').slice(0, 300))}`;
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
-  try { return JSON.parse(out); } catch { return null; }
+  try {
+    return JSON.parse(out);
+  } catch (parseErr) {
+    // Returning a bare null made the caller report "localized section titles
+    // wrongly flagged: null" — which asserts the validator flagged something
+    // when in fact its output could not be read at all. Say what happened.
+    latexValidate.lastFailure =
+      `generate-latex.mjs produced unparseable output: ${parseErr.message}; ${why}; stdout[0..300]=${JSON.stringify(String(out).slice(0, 300))}`;
+    return null;
+  }
 }
 
 const baseTex = (sectionTitle) => `\\documentclass{article}
@@ -13352,7 +13380,9 @@ try {
   if (localized && !localized.issues.some((i) => /section/i.test(i))) {
     pass('localized section titles validate (no spurious "Missing section")');
   } else {
-    fail(`localized section titles wrongly flagged: ${JSON.stringify(localized && localized.issues)}`);
+    fail(localized
+      ? `localized section titles wrongly flagged: ${JSON.stringify(localized.issues)}`
+      : `latexValidate could not read the validator's output — ${latexValidate.lastFailure}`);
   }
 
   // Too few sections must still be flagged.
