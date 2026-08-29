@@ -142,6 +142,16 @@ try {
   } else {
     fail(`reassembly: ${JSON.stringify(visibleText('<<b>script>alert(1)<<b>/script>'))}`);
   }
+  // Deep nesting needs more passes than the loop allows — each pass strips only
+  // the innermost tag. The fallback must not leave a reassembled tag behind.
+  let deep = 'script>alert(1)';
+  for (let i = 0; i < 12; i++) deep = '<a' + deep;
+  const exhausted = visibleText(deep);
+  if (!exhausted.includes('<') && exhausted === 'alert(1)') {
+    pass('the bounded fallback emits no `<` at all — nesting cannot outrun it');
+  } else {
+    fail(`fallback drift: ${JSON.stringify(exhausted)}`);
+  }
   if (titleFromText('🔥🔥🔥\n✨\nGo разработчик, удалёнка\nПишите') === 'Go разработчик, удалёнка') {
     pass('titleFromText() skips emoji dividers and takes the first substantive line');
   } else {
