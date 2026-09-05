@@ -60,6 +60,12 @@ function runScript(script, args, sandbox) {
     // Pinned for the same reason as the tracker: keep the fixture isolated from
     // the real reports/ dir. See makeSandbox.
     ...(sandbox.reports ? { CAREER_OPS_REPORTS: sandbox.reports } : {}),
+    // And for the same reason again: verify-pipeline's check 15 reads the
+    // portals file unconditionally, so a sandbox that pins the tracker but not
+    // this one still exits 1 on whatever is wrong in the DEVELOPER'S OWN
+    // portals.yml — failing every assertion here and naming a defect the
+    // sandbox does not contain.
+    CAREER_OPS_PORTALS: join(ROOT, 'test-fixtures', 'portals-empty.yml'),
   };
   try {
     const res = spawnSync(NODE, [join(ROOT, script), ...args], {

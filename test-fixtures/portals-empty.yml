@@ -1,0 +1,16 @@
+# Neutral portals config for verify-pipeline fixture runs.
+#
+# verify-pipeline's check 15 (portals.yml coverage) reads the portals file
+# unconditionally. Fixture tests that only override CAREER_OPS_TRACKER and
+# CAREER_OPS_REPORTS therefore inherit the DEVELOPER'S OWN portals.yml, and
+# verify-pipeline exits 1 on whatever is wrong in it — regardless of what the
+# fixture under test contains. Every assertion in that test then fails, naming
+# a defect that is not there.
+#
+# An empty list gives check 15 nothing to object to, so those tests measure the
+# thing they were written for: duplicate reports, orphan references, tracker
+# numbers, header handling.
+#
+# Check 15 itself is covered by tests/verify-pipeline-check15.test.mjs, which
+# points CAREER_OPS_PORTALS at its own fixtures.
+tracked_companies: []
