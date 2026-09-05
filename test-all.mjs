@@ -37,6 +37,26 @@
 import { execSync, execFile, execFileSync, spawn, spawnSync } from 'child_process';
 import { readFileSync, existsSync, readdirSync, mkdtempSync, mkdirSync, writeFileSync, rmSync as _rmSync, statSync, unlinkSync, realpathSync, symlinkSync, copyFileSync } from 'fs';
 
+// Environment for a verify-pipeline.mjs fixture run.
+//
+// CAREER_OPS_TRACKER and CAREER_OPS_REPORTS are not enough on their own.
+// verify-pipeline's check 15 reads the portals file unconditionally
+// (`process.env.CAREER_OPS_PORTALS || join(CAREER_OPS, 'portals.yml')`), so a
+// run that overrides only the first two inherits the DEVELOPER'S OWN
+// portals.yml — and exits 1 on whatever is wrong in it, whatever the fixture
+// under test contains. Every assertion in that test then fails, naming a defect
+// that is not in the fixture at all. Eight call sites had this gap; each new
+// fixture test copied the previous one and inherited it.
+//
+// Routing them all through one function makes the next copy correct by default,
+// which is the actual fix — repeating a third variable eight times is how the
+// gap opened in the first place.
+const VP_FIXTURE_PORTALS = join(ROOT, 'test-fixtures', 'portals-empty.yml');
+function vpFixtureEnv(overrides) {
+  return { ...process.env, CAREER_OPS_PORTALS: VP_FIXTURE_PORTALS, ...overrides };
+}
+
+
 // Windows keeps a handle open on a just-exited child process's working files
 // for a short window (antivirus and Search Indexer widen it), so removing a
 // fixture directory the suite created inside the repo can fail with EPERM even
@@ -9952,7 +9972,7 @@ try {
     const vpReports = join(vpTmp, 'reports');
     mkdirSync(vpReports, { recursive: true });
     const vpTracker = join(vpTmp, 'applications.md');
-    const vpEnv = { ...process.env, CAREER_OPS_TRACKER: vpTracker, CAREER_OPS_REPORTS: vpReports };
+    const vpEnv = vpFixtureEnv({ CAREER_OPS_TRACKER: vpTracker, CAREER_OPS_REPORTS: vpReports });
 
     const report = (company, role) =>
       `# Evaluación: ${company} — ${role}\n\n## Machine Summary\n\n\`\`\`yaml\ncompany: "${company}"\nrole: "${role}"\nscore: 4.2\n\`\`\`\n`;
@@ -10043,7 +10063,7 @@ try {
     const tkReports = join(tkTmp, 'reports');
     mkdirSync(tkReports, { recursive: true });
     const tkTracker = join(tkTmp, 'applications.md');
-    const tkEnv = { ...process.env, CAREER_OPS_TRACKER: tkTracker, CAREER_OPS_REPORTS: tkReports };
+    const tkEnv = vpFixtureEnv({ CAREER_OPS_TRACKER: tkTracker, CAREER_OPS_REPORTS: tkReports });
     const tkReport = (company, role) =>
       `# Evaluación: ${company} — ${role}\n\n## Machine Summary\n\n\`\`\`yaml\ncompany: "${company}"\nrole: "${role}"\nscore: 4.0\n\`\`\`\n`;
 
@@ -10123,7 +10143,7 @@ try {
     const orReports = join(orTmp, 'reports');
     mkdirSync(orReports, { recursive: true });
     const orTracker = join(orTmp, 'applications.md');
-    const orEnv = { ...process.env, CAREER_OPS_TRACKER: orTracker, CAREER_OPS_REPORTS: orReports };
+    const orEnv = vpFixtureEnv({ CAREER_OPS_TRACKER: orTracker, CAREER_OPS_REPORTS: orReports });
     const rpt = (company, role) =>
       `# Evaluación: ${company} — ${role}\n\n## Machine Summary\n\n\`\`\`yaml\ncompany: "${company}"\nrole: "${role}"\nscore: 3.1\n\`\`\`\n`;
 
@@ -10198,7 +10218,7 @@ try {
   const dupNumTmp = mkdtempSync(join(tmpdir(), 'career-ops-verify-dupnum-'));
   try {
     const dupNumTracker = join(dupNumTmp, 'applications.md');
-    const dupNumEnv = { ...process.env, CAREER_OPS_TRACKER: dupNumTracker };
+    const dupNumEnv = vpFixtureEnv({ CAREER_OPS_TRACKER: dupNumTracker });
 
     writeFileSync(dupNumTracker,
       '# Applications Tracker\n\n' +
@@ -10245,7 +10265,7 @@ try {
       '|---|------|---------|------|-------|--------|-----|--------|-------|\n' +
       '| 1 | 2026-01-01 | Acme | Engineer | 4.0/5 | Evaluated | ❌ | — | — |\n' +
       '| 2 | 2026-01-02 | Globex | Analyst | 3.9/5 | Evaluated | ❌ | — | — |\n');
-    const cleanOut = run(NODE, ['verify-pipeline.mjs'], { env: { ...process.env, CAREER_OPS_TRACKER: cleanTracker }, stdio: ['pipe', 'pipe', 'pipe'] });
+    const cleanOut = run(NODE, ['verify-pipeline.mjs'], { env: vpFixtureEnv({ CAREER_OPS_TRACKER: cleanTracker }), stdio: ['pipe', 'pipe', 'pipe'] });
     if (cleanOut !== null && cleanOut.includes('No duplicate tracker numbers')) {
       pass('clean tracker with unique numbers passes the duplicate-number check');
     } else {
@@ -10914,9 +10934,9 @@ try {
     const vpKeyReports = join(vpKeyTmp, 'reports');
     mkdirSync(vpKeyReports, { recursive: true });
     const vpKeyTracker = join(vpKeyTmp, 'applications.md');
-    const vpKeyEnv = {
-      ...process.env, CAREER_OPS_TRACKER: vpKeyTracker, CAREER_OPS_REPORTS: vpKeyReports,
-    };
+    const vpKeyEnv = vpFixtureEnv({
+      CAREER_OPS_TRACKER: vpKeyTracker, CAREER_OPS_REPORTS: vpKeyReports,
+    });
     const jaReport = (company, role) =>
       `# Evaluación: ${company} — ${role}\n\n## Machine Summary\n\n\`\`\`yaml\ncompany: "${company}"\nrole: "${role}"\nscore: 4.0\n\`\`\`\n`;
 
@@ -12434,7 +12454,7 @@ try {
     try {
       badOut = execFileSync(NODE, ['verify-pipeline.mjs'], {
         cwd: ROOT, encoding: 'utf-8', timeout: 30000,
-        env: { ...process.env, CAREER_OPS_TRACKER: hBadRow, CAREER_OPS_REPORTS: hReports },
+        env: vpFixtureEnv({ CAREER_OPS_TRACKER: hBadRow, CAREER_OPS_REPORTS: hReports }),
       });
     } catch (e) {
       badOut = String(e.stdout ?? '');
@@ -12459,7 +12479,7 @@ try {
     try {
       hdrOut = execFileSync(NODE, ['verify-pipeline.mjs'], {
         cwd: ROOT, encoding: 'utf-8', timeout: 30000,
-        env: { ...process.env, CAREER_OPS_TRACKER: hHeaderish, CAREER_OPS_REPORTS: hReports },
+        env: vpFixtureEnv({ CAREER_OPS_TRACKER: hHeaderish, CAREER_OPS_REPORTS: hReports }),
       });
     } catch (e) {
       hdrOut = String(e.stdout ?? '');
