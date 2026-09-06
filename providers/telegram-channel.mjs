@@ -69,7 +69,14 @@ const LOCALE_ROOT_RE = /^(\/[a-z]{2}(-[a-z]{2})?)?$/i;
 const EMPLOYER_LABEL_RE = /^[^\p{L}\p{N}]{0,3}\s*(?:компания|компанія|company|работодатель|employer|hiring company)\s*[:：]\s*(.{2,80})$/iu;
 // Employer hidden on purpose. The post is real but rule 1 cannot be met.
 const ANONYMOUS_RE = /(?:название скрыто|компания скрыта|name hidden|undisclosed|confidential|\bour client\b|наш(?:его|им|ему)? клиент|для клиента)/i;
-const LOCATIONISH_RE = /\b(remote|удал[её]нк\w*|hybrid|onsite|office|офис|full[- ]?time|part[- ]?time|москва|спб|berlin|london|germany|europe|usa)\b/i;
+// Unicode boundaries, not `\b`, which is ASCII-only and never fires next to
+// Cyrillic: every Russian alternative here (москва, спб, офис, удалёнк*) was
+// unreachable, so `Senior Engineer | Москва` returned "Москва" as the EMPLOYER
+// — the wrong-field-as-fact this policy exists to prevent, on the channels the
+// provider mostly reads. `\w*` after удал[её]нк is ASCII-only for the same
+// reason and cannot reach the ending, so it becomes \p{L}*. ROLE_WORD_RE
+// below already uses this form.
+const LOCATIONISH_RE = /(?<![\p{L}\p{N}])(remote|удал[её]нк\p{L}*|hybrid|onsite|office|офис|full[- ]?time|part[- ]?time|москва|спб|berlin|london|germany|europe|usa)(?![\p{L}\p{N}])/iu;
 const DATE_LIKE_RE = /\b(19|20)\d{2}\b|\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\w*\b/i;
 const ZERO_WIDTH_RE = /[\u200B-\u200D\uFEFF]/g;
 // A line of nothing but hashtags ("#middle #удаленка") — never a title, and

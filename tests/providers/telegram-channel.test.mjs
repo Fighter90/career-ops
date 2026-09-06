@@ -151,6 +151,14 @@ try {
     [['#senior #удаленка', 'Senior Engineer'], 'a hashtag-only first line whose next line is a short role title, not an employer'],
     [['#middle #гибрид', 'Ведущий инженер'], 'a hashtag-only first line whose next line is a short Russian role title (JS \\b never matches around Cyrillic)'],
     [['#tag1 #tag2'], 'a hashtag-only first line with no second line at all'],
+    // LOCATIONISH_RE used `\b`, which — as the ROLE_WORD_RE case two lines up
+    // already records — never matches around Cyrillic. Every Russian
+    // alternative in it was therefore unreachable, and these four returned the
+    // city or the contract word as the EMPLOYER.
+    [['Senior Engineer | Москва'], 'a Cyrillic city after the pipe'],
+    [['Senior Engineer | спб'], 'a lowercase Cyrillic city abbreviation after the pipe'],
+    [['Senior Engineer | Офис'], 'a Cyrillic contract word after the pipe'],
+    [['Senior Engineer | удалёнка'], 'a Cyrillic remote-work word after the pipe'],
   ];
   for (const [lines, label] of noNames) {
     const got = employerName(lines);
