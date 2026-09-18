@@ -15,3 +15,8 @@ Career-ops is AI-agnostic and runs on several command-line agent tools. The core
 | GitHub Copilot CLI | `AGENTS.md` | Headless/Batch: `copilot -p "prompt"` |
 | Hermes | `HERMES.md` | Interactive: `hermes` (or `hermes --tui`; Hermes auto-injects `AGENTS.md`, so describe the task in plain text). Headless/Batch: `hermes -z "prompt"` (add `--in <dir>` for the working directory). |
 | Gemini | `GEMINI.md` | Legacy wrapper redirecting to `AGENTS.md` (transitioned to Antigravity CLI). |
+| Hermes Agent | `AGENTS.md` | Interactive: open the checkout in a Hermes session (see [`docs/HERMES.md`](HERMES.md)) |
+
+## Hermes Agent
+
+Hermes runs the same pipeline as every other CLI here. Two things differ: the repository's own skill loads only once you trust the checkout (`hermes skills trust`), and Hermes scans project context files before loading them, so a rule that quotes attack phrasing literally can be dropped. Hermes is interactive-only here, since nothing in this repository drives a `hermes` binary headlessly. The full walkthrough, from clone to first evaluation, is in [`docs/HERMES.md`](HERMES.md).
