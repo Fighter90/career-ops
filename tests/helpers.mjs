@@ -192,15 +192,14 @@ export function run(cmd, args = [], opts = {}) {
   // formatRunFailure() attribute an unrelated child's stderr to whatever failed
   // most recently. A stale diagnostic is worse than none.
   //
-  // Clearing here rather than on the success path also keeps the execFileSync
-  // call below byte-identical: editing that line makes CodeQL re-attribute its
-  // long-standing "uncontrolled command line" finding to whichever PR touched
-  // it. Nothing about what reaches the child changes either way, since the
-  // executable is still allowlisted and the arguments are still an argv vector.
+  // `shell: false` is pinned AFTER the ...opts spread, so no caller option can
+  // route the argv through a shell (CodeQL js/shell-command-injection-from-
+  // environment). The executable is allowlisted and the arguments stay an argv
+  // vector.
   lastFailure = null;
   const exe = resolveAllowedExecutable(cmd);
   try {
-    return execFileSync(exe, args, { cwd: ROOT, encoding: 'utf-8', timeout: 30000, ...opts }).trim();
+    return execFileSync(exe, args, { cwd: ROOT, encoding: 'utf-8', timeout: 30000, ...opts, shell: false }).trim();
   } catch (e) {
     // execFileSync attaches the child's streams and exit status to the error.
     // Keep them: callers report failure as `<name> crashed`, and without this a

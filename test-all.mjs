@@ -7263,7 +7263,14 @@ if (!hasBrowser) {
     if (candidate) {
       const u = new URL(candidate);
       const allowed = new Set(['boards.greenhouse.io', 'job-boards.greenhouse.io']);
-      if (u.protocol === 'https:' && allowed.has(u.hostname)) liveJobUrl = candidate;
+      // Rebuild the URL from a literal host and a numeric job id rather than
+      // handing the API-supplied string to a child process's argv (CodeQL
+      // js/command-line-injection).
+      const jobId = Number(u.pathname.match(/\/jobs\/(\d+)/)?.[1]);
+      if (u.protocol === 'https:' && allowed.has(u.hostname) && Number.isSafeInteger(jobId) && jobId > 0) {
+        const host = u.hostname === 'boards.greenhouse.io' ? 'boards.greenhouse.io' : 'job-boards.greenhouse.io';
+        liveJobUrl = `https://${host}/anthropic/jobs/${jobId}`;
+      }
     }
   } catch { /* offline — degrade gracefully */ }
 

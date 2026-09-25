@@ -1287,15 +1287,28 @@ if (!existsSync(API_PATH)) {
   const wrapperFile = join(tmpDir, 'run.mjs');
   try {
     await mkdir(tmpDir, { recursive: true });
+    // The wrapper's source is fixed text; the paths reach it through the
+    // environment instead of being spliced into the code (CodeQL
+    // js/bad-code-sanitization).
     await writeFile(wrapperFile, [
       "import { writeFileSync } from 'node:fs';",
-      `globalThis.fetch = async (...args) => { writeFileSync(${JSON.stringify(marker)}, String(args[0]), 'utf8'); throw new Error('EGRESS'); };`,
-      `process.argv = [process.argv[0], ${JSON.stringify(CHECK_PATH)}, 'Acme Corp', '--json', '--cache-dir', ${JSON.stringify(join(tmpDir, 'cache'))}];`,
-      `await import(${JSON.stringify(pathToFileURL(CHECK_PATH).href)});`,
+      "const cfg = JSON.parse(process.env.H1B_TEST_WRAPPER_CFG);",
+      "globalThis.fetch = async (...args) => { writeFileSync(cfg.marker, String(args[0]), 'utf8'); throw new Error('EGRESS'); };",
+      "process.argv = [process.argv[0], cfg.checkPath, 'Acme Corp', '--json', '--cache-dir', cfg.cacheDir];",
+      "await import(cfg.checkUrl);",
     ].join('\n'), 'utf8');
 
     await new Promise((resolve) => {
-      const env = { ...process.env, H1B_INDEX_PATH: NO_INDEX };
+      const env = {
+        ...process.env,
+        H1B_INDEX_PATH: NO_INDEX,
+        H1B_TEST_WRAPPER_CFG: JSON.stringify({
+          marker,
+          checkPath: CHECK_PATH,
+          cacheDir: join(tmpDir, 'cache'),
+          checkUrl: pathToFileURL(CHECK_PATH).href,
+        }),
+      };
       delete env.H1B_API_BASE;
       delete env.H1B_API_TOKEN;
       execFile(process.execPath, [wrapperFile], { env, timeout: 20_000 }, (err, stdout) => {
