@@ -6,6 +6,9 @@ on:
     branches: [main]
   schedule:
     - cron: '0 4 * * 1' # Weekly Monday 4am UTC
+  # Fork: lets a maintainer re-run the analysis on demand. Code-scanning alerts
+  # only close when a new analysis of main stops reporting them.
+  workflow_dispatch:
 
 permissions:
   actions: read
