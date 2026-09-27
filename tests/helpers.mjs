@@ -162,14 +162,22 @@ const WINDOWS_CYGPATH_CANDIDATES = [
  */
 function resolveAllowedExecutable(cmd) {
   if (cmd === process.execPath || cmd === 'node') return process.execPath;
-  if (cmd === 'bash') return 'bash';
   if (cmd === 'git') return 'git';
   if (cmd === 'go') return 'go';
   if (cmd === 'wsl') return 'wsl';
-  for (const candidate of WINDOWS_BASH_CANDIDATES) {
-    if (cmd === candidate) return candidate;
-  }
-  throw new Error(`run(): executable not in the test-helper allowlist: ${cmd}`);
+  throw new Error(`run(): executable not in the test-helper allowlist: ${cmd}${isAllowedBash(cmd) ? ' (use runBash() for a shell)' : ''}`);
+}
+
+/**
+ * Shell executables are kept OUT of run()'s allowlist and go through runBash().
+ * A single execFileSync call site whose executable may be `bash` makes a
+ * static analyser treat EVERY argv reaching it as shell-interpreted — which is
+ * how the ~130 `run(NODE, [join(ROOT, …)])` calls became a
+ * js/shell-command-injection-from-environment alert. Two call sites keep node
+ * argv and shell argv apart.
+ */
+function isAllowedBash(cmd) {
+  return cmd === 'bash' || WINDOWS_BASH_CANDIDATES.includes(cmd);
 }
 
 /**
@@ -185,6 +193,19 @@ function resolveAllowedExecutable(cmd) {
  * @param {object} [opts={}] - Extra child_process options.
  * @returns {string|null} Trimmed stdout, or null when the command fails.
  */
+// Only these child_process options may come from a caller. An explicit allowlist
+// (rather than spreading `opts`) means no caller can smuggle `shell`, `argv0` or
+// a detached/uid option into the child, and CodeQL can see that statically
+// (js/shell-command-injection-from-environment on the spread form).
+const CHILD_OPTION_KEYS = ['cwd', 'env', 'input', 'timeout', 'stdio', 'encoding', 'maxBuffer', 'killSignal', 'windowsHide'];
+function pickChildOptions(opts) {
+  const out = {};
+  for (const key of CHILD_OPTION_KEYS) {
+    if (opts && Object.prototype.hasOwnProperty.call(opts, key)) out[key] = opts[key];
+  }
+  return out;
+}
+
 export function run(cmd, args = [], opts = {}) {
   // Cleared as the very first statement. resolveAllowedExecutable() throws for a
   // command outside the allowlist, so a reset placed after it is skipped on that
@@ -192,14 +213,30 @@ export function run(cmd, args = [], opts = {}) {
   // formatRunFailure() attribute an unrelated child's stderr to whatever failed
   // most recently. A stale diagnostic is worse than none.
   //
-  // `shell: false` is pinned AFTER the ...opts spread, so no caller option can
-  // route the argv through a shell (CodeQL js/shell-command-injection-from-
-  // environment). The executable is allowlisted and the arguments stay an argv
-  // vector.
+  // Caller options pass through pickChildOptions(), which has no `shell` key,
+  // and execFileSync defaults to no shell — so the argv can never be routed
+  // through one. The executable is allowlisted (never a shell — see
+  // isAllowedBash) and the arguments stay an argv vector.
   lastFailure = null;
   const exe = resolveAllowedExecutable(cmd);
+  return captureRunFailure(exe, () =>
+    execFileSync(exe, args, { cwd: ROOT, encoding: 'utf-8', timeout: 30000, ...pickChildOptions(opts) }).trim());
+}
+
+/**
+ * run() for a shell: `bash` from getBash() or a known Git Bash path. Same
+ * contract — trimmed stdout, or null with lastRunFailure() populated.
+ */
+export function runBash(bash, args = [], opts = {}) {
+  lastFailure = null;
+  if (!isAllowedBash(bash)) throw new Error(`runBash(): not an allowlisted shell: ${bash}`);
+  return captureRunFailure(bash, () =>
+    execFileSync(bash, args, { cwd: ROOT, encoding: 'utf-8', timeout: 30000, ...pickChildOptions(opts) }).trim());
+}
+
+function captureRunFailure(exe, exec) {
   try {
-    return execFileSync(exe, args, { cwd: ROOT, encoding: 'utf-8', timeout: 30000, ...opts, shell: false }).trim();
+    return exec();
   } catch (e) {
     // execFileSync attaches the child's streams and exit status to the error.
     // Keep them: callers report failure as `<name> crashed`, and without this a
