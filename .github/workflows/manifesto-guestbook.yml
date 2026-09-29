@@ -14,6 +14,10 @@ permissions:
 
 jobs:
   post:
+    # Posts to the upstream project's Discord only. In a fork the job is skipped:
+    # there is no webhook to post to, and a fork re-posting signatures it merged
+    # from upstream would duplicate every guestbook entry.
+    if: github.repository == 'career-ops-hq/career-ops'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/github-script@v9

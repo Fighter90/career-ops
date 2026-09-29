@@ -14,6 +14,10 @@ permissions:
 
 jobs:
   release-please:
+    # Releases and the npm publish belong to the upstream repository only: a fork
+    # has neither the release App secrets nor the npm package, so there this job
+    # is skipped rather than failing on every push to main.
+    if: github.repository == 'career-ops-hq/career-ops'
     runs-on: ubuntu-latest
     steps:
       # release-please opens and updates its release PR with a GitHub App token,
