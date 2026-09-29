@@ -1,9 +1,8 @@
 // tests/scaffolder-npm-command.test.mjs — `npx @santifer/career-ops init` must be able to run npm on Windows
-import { execFileSync } from 'child_process';
 import { existsSync, readFileSync } from 'fs';
 import { dirname, join } from 'path';
 import { pass, fail, ROOT } from './helpers.mjs';
-import { npmCommand } from '../scaffolder/bin/npm-command.mjs';
+import { npmCommand, execNpm } from '../scaffolder/bin/npm-command.mjs';
 
 console.log('\nscaffolder — launching npm install (Windows EINVAL on npm.cmd)');
 
@@ -64,19 +63,19 @@ for (const file of localImports) {
 
 // 4. On Windows, actually run npm through both paths the scaffolder can take.
 if (process.platform === 'win32') {
-  const runs = (label, cmd) => {
+  const runs = (label, deps) => {
     try {
-      const out = execFileSync(cmd.file, cmd.args, { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 60_000 }).trim();
+      const out = String(execNpm(['--version'], { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 60_000 }, deps)).trim();
       if (/^\d+\.\d+\.\d+/.test(out)) pass(`${label}: npm --version → ${out}`);
       else fail(`${label}: unexpected npm --version output ${JSON.stringify(out)}`);
     } catch (err) {
       fail(`${label}: ${err.code || ''} ${err.message.split('\n')[0]}`);
     }
   };
-  runs('Windows cmd.exe fallback', npmCommand(['--version'], { env: { ComSpec: process.env.ComSpec } }));
+  runs('Windows cmd.exe fallback', { env: { ComSpec: process.env.ComSpec } });
   // test-all is usually run with plain `node`, so npm_execpath is unset here;
   // the npm bundled next to node.exe stands in for the one npx would export.
   const bundled = join(dirname(process.execPath), 'node_modules', 'npm', 'bin', 'npm-cli.js');
   const npmCli = process.env.npm_execpath || (existsSync(bundled) ? bundled : null);
-  if (npmCli) runs('Windows npm-cli.js path', npmCommand(['--version'], { env: { npm_execpath: npmCli } }));
+  if (npmCli) runs('Windows npm-cli.js path', { env: { npm_execpath: npmCli } });
 }

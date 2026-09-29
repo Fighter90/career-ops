@@ -206,9 +206,10 @@ export function htmlToText(html) {
     // Strip comments first so a comment can't shelter a tag from the strips below.
     .replace(/<!--[\s\S]*?-->/g, ' ')
     // Match the full opening tag (incl. attributes) before the lazy body, and
-    // tolerate whitespace in the closing tag — a stricter filter CodeQL accepts.
-    .replace(/<script\b[^>]*>[\s\S]*?<\/script\s*>/gi, ' ')
-    .replace(/<style\b[^>]*>[\s\S]*?<\/style\s*>/gi, ' ')
+    // accept anything up to `>` in the closing tag: browsers end the element at
+    // `</script foo>` too (CodeQL js/bad-tag-filter).
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script\b[^>]*>/gi, ' ')
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style\b[^>]*>/gi, ' ')
     .replace(/<[^>]+>/g, ' ')
     .replace(/&nbsp;/gi, ' ')
     .replace(/&lt;/gi, '<')

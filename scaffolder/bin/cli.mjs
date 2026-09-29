@@ -10,7 +10,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync } from "node:fs";
 import { join, delimiter } from "node:path";
 import { ensureSkillEntrypoints } from "./skill-entrypoints.mjs";
-import { npmCommand } from "./npm-command.mjs";
+import { execNpm } from "./npm-command.mjs";
 
 const REPO = "https://github.com/career-ops-hq/career-ops.git";
 const LATEST_RELEASE = "https://api.github.com/repos/career-ops-hq/career-ops/releases/latest";
@@ -120,8 +120,7 @@ async function main() {
   console.log("\n→ Installing dependencies (npm install) ...");
   let installed = true;
   try {
-    const npm = npmCommand(["install"]);
-    execFileSync(npm.file, npm.args, { cwd: target, stdio: "inherit" });
+    execNpm(["install"], { cwd: target, stdio: "inherit" });
   } catch {
     installed = false;
     console.warn('\n! npm install failed — you can re-run it manually later with "npm install".');

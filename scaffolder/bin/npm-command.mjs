@@ -18,25 +18,61 @@
 const SAFE_ARG = /^[\w.@=:/-]+$/;
 const NPM_CLI_JS = /[\\/]npm-cli\.(?:c|m)?js$/i;
 
+import { execFileSync } from "node:child_process";
+
 /**
- * Returns `{ file, args }` for execFileSync/spawnSync to run `npm <npmArgs>`.
+ * Which of the three launch routes applies. Returns only a route name, so the
+ * decision carries no path data of its own.
+ */
+function npmRoute(npmArgs, platform, env) {
+  for (const arg of npmArgs) {
+    if (!SAFE_ARG.test(arg)) throw new Error(`npmCommand: refusing unsafe npm argument ${JSON.stringify(arg)}`);
+  }
+  if (platform !== "win32") return "posix";
+  const npmCli = env.npm_execpath;
+  return npmCli && NPM_CLI_JS.test(npmCli) ? "node" : "cmd";
+}
+
+/**
+ * Returns `{ file, args }` describing how `npm <npmArgs>` is launched.
  * `npmArgs` must be plain tokens (e.g. "install", "--version"): on the
  * cmd.exe fallback they are joined into a command line, so anything that
  * needs quoting or could be read as shell syntax is refused.
+ *
+ * Descriptive only — run npm with execNpm(), which keeps the cmd.exe route
+ * and the npm-cli.js route on separate execFileSync calls.
  */
 export function npmCommand(npmArgs, {
   platform = process.platform,
   env = process.env,
   execPath = process.execPath,
 } = {}) {
-  for (const arg of npmArgs) {
-    if (!SAFE_ARG.test(arg)) throw new Error(`npmCommand: refusing unsafe npm argument ${JSON.stringify(arg)}`);
+  switch (npmRoute(npmArgs, platform, env)) {
+    case "posix": return { file: "npm", args: [...npmArgs] };
+    case "node": return { file: execPath, args: [env.npm_execpath, ...npmArgs] };
+    // /d skips AutoRun commands, /s keeps the quoted command line intact.
+    default: return { file: env.ComSpec || "cmd.exe", args: ["/d", "/s", "/c", ["npm", ...npmArgs].join(" ")] };
   }
-  if (platform !== "win32") return { file: "npm", args: [...npmArgs] };
+}
 
-  const npmCli = env.npm_execpath;
-  if (npmCli && NPM_CLI_JS.test(npmCli)) return { file: execPath, args: [npmCli, ...npmArgs] };
-
-  // /d skips AutoRun commands, /s keeps the quoted command line intact.
-  return { file: env.ComSpec || "cmd.exe", args: ["/d", "/s", "/c", ["npm", ...npmArgs].join(" ")] };
+/**
+ * Runs `npm <npmArgs>` with execFileSync and returns its result.
+ *
+ * Each route has its own execFileSync call, so the npm-cli.js path (an
+ * absolute path from the environment) only ever reaches Node's argv and never
+ * the cmd.exe command line (CodeQL js/shell-command-injection-from-environment).
+ */
+export function execNpm(npmArgs, execOptions = {}, {
+  platform = process.platform,
+  env = process.env,
+  execPath = process.execPath,
+} = {}) {
+  switch (npmRoute(npmArgs, platform, env)) {
+    case "posix":
+      return execFileSync("npm", [...npmArgs], execOptions);
+    case "node":
+      return execFileSync(execPath, [env.npm_execpath, ...npmArgs], execOptions);
+    default:
+      return execFileSync(env.ComSpec || "cmd.exe", ["/d", "/s", "/c", ["npm", ...npmArgs].join(" ")], execOptions);
+  }
 }
