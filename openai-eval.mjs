@@ -269,7 +269,7 @@ const { contextBody, budgetReport } = buildBudgetedPrompt({
   profileYml,
   jdText,
   noCompress,
-  maxTokens: 128_000, // gpt-4o-mini context window
+  modelName,
 });
 
 // Log token budget info
