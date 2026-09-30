@@ -475,6 +475,7 @@ const SYSTEM_PATHS = [
   'LICENSE',
   'CITATION.cff',
   'funding.json',
+  '.well-known/',
   '.editorconfig',
   '.github/',
   'package.json',

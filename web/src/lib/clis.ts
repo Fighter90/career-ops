@@ -65,12 +65,12 @@ export const KNOWN: CliSpec[] = [
   { id: "copilot", name: "GitHub Copilot CLI", bin: "copilot", run: "copilot -p", url: "https://docs.github.com/en/copilot/github-copilot-in-the-cli", args: (p) => ["-p", p] },
   { id: "qwen", name: "Qwen CLI", bin: "qwen", run: "qwen -p", url: "https://qwen.ai/qwencode", args: (p) => ["-p", p] },
   { id: "antigravity", name: "Antigravity CLI", bin: "agy", run: "agy -p", url: "https://antigravity.google", args: (p) => ["-p", p] },
-  { id: "hermes", name: "Hermes", bin: "hermes", run: "hermes -z", url: "https://hermes-agent.nousresearch.com/docs", args: (p) => ["-z", p] },
   // Grok Build speaks its own `--output-format streaming-json` schema, not
   // Claude's `stream-json`. It has a parser of its own now, so it streams
   // structured like the other two rather than falling through to raw stdout —
   // which displayed fine and recorded `tokens: 0` on every grok run.
   { id: "grok", name: "Grok Build CLI", bin: "grok", run: "grok -p", url: "https://docs.x.ai/build/overview", args: (p) => ["-p", p], streamArgs: (p) => ["-p", p, "--output-format", "streaming-json"], parseEvent: parseGrokEvent },
+  { id: "hermes", name: "Hermes Agent", bin: "hermes", run: "hermes chat", url: "https://github.com/NousResearch/hermes-agent", args: (p) => ["chat", "-q", p, "--oneshot", "-Q", "--no-restore-cwd"] },
 ];
 
 function searchDirs(): string[] {

@@ -282,7 +282,7 @@ When choosing a budget-friendly model, you need strong reasoning capabilities to
 | **Kimi K2.5** | Moonshot AI | API pricing applies | Verified with OpenCode using the Moonshot OpenAI-compatible endpoint. Produces structured Markdown suitable for Career-Ops evaluations. See the verified OpenCode recipe below. |
 
 
-> **Standalone evaluator (no CLI config needed):** every OpenAI-compatible provider works directly through `node openai-eval.mjs` — DeepSeek, Qwen, GLM (Z.ai / Zhipu), Kimi (Moonshot), MiniMax, Mistral, Grok (xAI), Together, Fireworks, Groq, OpenRouter, Requesty, BytePlus / Volcengine Ark, and local Ollama / LM Studio / llama.cpp / vLLM. Just set a base URL, model, and key (see `node openai-eval.mjs --help` for each provider's base URL, or the ready-made `npm run <provider>:eval` scripts — `deepseek:eval`, `mistral:eval`, `grok:eval`, `ark:eval`, …):
+> **Standalone evaluator (no CLI config needed):** every OpenAI-compatible provider works directly through `node openai-eval.mjs` — DeepSeek, Qwen, GLM (Z.ai / Zhipu), Kimi (Moonshot), MiniMax, Mistral, Grok (xAI), Together, Fireworks, Groq, OpenRouter, Requesty, Cheaper Inference, BytePlus / Volcengine Ark, and local Ollama / LM Studio / llama.cpp / vLLM. Just set a base URL, model, and key (see `node openai-eval.mjs --help` for each provider's base URL, or the ready-made `npm run <provider>:eval` scripts — `deepseek:eval`, `mistral:eval`, `grok:eval`, `ark:eval`, …):
 > ```bash
 > OPENAI_BASE_URL=https://openrouter.ai/api/v1 \
 > OPENAI_MODEL=deepseek/deepseek-chat \
@@ -294,6 +294,13 @@ When choosing a budget-friendly model, you need strong reasoning capabilities to
 > OPENAI_BASE_URL=https://router.requesty.ai/v1 \
 > OPENAI_MODEL=openai/gpt-4o-mini \
 > OPENAI_API_KEY=your_requesty_key \
+> node openai-eval.mjs --file ./jds/job.txt
+> ```
+> Cheaper Inference (`https://api.cheaperinference.com/v1`) is an OpenAI-compatible gateway that works the same way. Model ids are bare (no vendor prefix), such as `gpt-5.4-mini`:
+> ```bash
+> OPENAI_BASE_URL=https://api.cheaperinference.com/v1 \
+> OPENAI_MODEL=gpt-5.4-mini \
+> OPENAI_API_KEY=your_cheaperinference_key \
 > node openai-eval.mjs --file ./jds/job.txt
 > ```
 >
