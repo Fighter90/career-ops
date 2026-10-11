@@ -441,6 +441,17 @@ try {
     fail(`normalizeLeverJob  => ${JSON.stringify(lever)}`);
   }
 
+  const leverHtmlIntro = normalizeLeverJob(
+    { text: 'X', descriptionPlain: '', description: '<div>This position is listed on behalf of a partner.</div>', lists: [{ text: 'Requirements', content: '<li>Go</li>' }] },
+    'https://jobs.lever.co/acme/1',
+  );
+  if (leverHtmlIntro && leverHtmlIntro.text.indexOf('listed on behalf of a partner') >= 0
+      && leverHtmlIntro.text.indexOf('listed on behalf of a partner') < leverHtmlIntro.text.indexOf('Requirements')) {
+    pass('normalizeLeverJob falls back to the description HTML when descriptionPlain is empty');
+  } else {
+    fail(`normalizeLeverJob html intro => ${JSON.stringify(leverHtmlIntro)}`);
+  }
+
   const leverNulls = [
     normalizeLeverJob(null, 'https://x/1'),
     normalizeLeverJob({}, 'https://x/1'),

@@ -1,6 +1,6 @@
 {
   "name": "career-ops",
-  "version": "1.35.0",
+  "version": "1.36.0",
   "description": "Open-source AI job search that runs locally in your AI coding CLI: scan job portals, evaluate listings into a structured A-H report with a 1-5 score, tailor your CV, track applications",
   "private": true,
   "engines": {
@@ -112,7 +112,7 @@
     "@google/generative-ai": "^0.24.1",
     "dotenv": "^18.0.4",
     "js-yaml": "^5.3.0",
-    "playwright": "1.63.0",
+    "playwright": "1.64.0",
     "undici": "^6.28.1"
   }
 }

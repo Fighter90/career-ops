@@ -21,6 +21,8 @@ import { GeneratePdfButton } from "@/components/generate-pdf-button";
 import { ApplyButton } from "@/components/apply-button";
 import { DeleteFromTracker } from "@/components/delete-from-tracker";
 import { ReportMarkdown } from "@/components/report-markdown";
+import { KeywordCoverage } from "@/components/keyword-coverage";
+import { CompanyEvidence } from "@/components/company-evidence";
 import { companyPresentation } from "@/lib/company-presentation.mjs";
 
 // Progressive disclosure of the report. Current oferta.md writes letter F as
@@ -254,6 +256,15 @@ export function ReportView({
               </div>
             );
           })()}
+          {/* After the report body: the reader has just decided whether the
+              offer is worth applying to, and this answers the next question —
+              whether the CV they would send reads as a match for it. */}
+          <KeywordCoverage reportId={id} />
+          {/* Then the company itself. Only with a tracker row: the card is keyed
+              on a company name, and a report with no row has none to look up —
+              guessing one from the report would surface another company's
+              history. */}
+          {app?.company && <CompanyEvidence company={app.company} />}
           <ScoreMethodology />
         </>
       ) : (

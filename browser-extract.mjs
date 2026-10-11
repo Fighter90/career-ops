@@ -497,7 +497,9 @@ export function normalizeLeverJob(json, postingUrl, textCap = JD_TEXT_CAP) {
         .filter(Boolean)
         .join('\n\n')
     : '';
-  const body = [str(json.descriptionPlain), lists, str(json.additionalPlain)].filter(Boolean).join('\n\n');
+  // Lever can leave descriptionPlain empty while description holds the HTML.
+  const intro = str(json.descriptionPlain) || jdHtmlToText(json.description);
+  const body = [intro, lists, str(json.additionalPlain)].filter(Boolean).join('\n\n');
   if (!body) return null;
 
   const meta = [];

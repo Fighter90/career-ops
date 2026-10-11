@@ -276,13 +276,16 @@ export function setPluginEnabled(root, id, on, settings) {
 const setEnabled = (id, on, settings) => setPluginEnabled(DATA_ROOT, id, on, settings);
 
 // The capability card a user must consent to before a plugin runs.
-function capabilityCard(manifest, source) {
+export function capabilityCard(manifest, source) {
+  const hasLoopbackHost = manifest.allowedHosts.some(host =>
+    /^(localhost|127\.\d+\.\d+\.\d+|\[?::1\]?)$/i.test(host));
+  const localhostSuffix = manifest.allowsLocalhost && !hasLoopbackHost ? '  + localhost' : '';
   return [
     `\n  Plugin:        ${manifest.id}  (${sourceBadge(source)})`,
     `  Does:          ${manifest.description}`,
     `  Hooks:         ${manifest.hooks.join(', ')}`,
     `  Reads keys:    ${manifest.requiredEnv.length ? manifest.requiredEnv.join(', ') + '  (you provide these in .env)' : 'none'}`,
-    `  Network:       ${manifest.allowedHosts.length ? manifest.allowedHosts.join(', ') : '(none declared)'}${manifest.allowsLocalhost ? '  + localhost' : ''}`,
+    `  Network:       ${manifest.allowedHosts.length ? manifest.allowedHosts.join(', ') : '(none declared)'}${localhostSuffix}`,
     `  Ships a skill: ${manifest.skill ? 'yes — instructs your AI tool when you run `plugins.mjs skill`' : 'no'}`,
   ].join('\n');
 }

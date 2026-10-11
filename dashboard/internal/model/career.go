@@ -59,6 +59,17 @@ type ProgressMetrics struct {
 	InterviewRate float64 // Interview / Applied
 	OfferRate     float64 // Offer / Applied
 
+	// RatesDenominator is the Applied count the three rates above were taken
+	// over. ZERO MEANS THEY ARE ABSENT, not that they measured 0%.
+	//
+	// Without it the renderer cannot tell those apart, and a user who has not
+	// applied to anything yet was shown 0.0% on all three — coloured by
+	// rateColor, whose default band is Red, so the dashboard reported the search
+	// as failing before it had begun. Mirrors rateOrNull() in
+	// web/src/lib/analytics/view-model.mjs, which gates each rate on the count
+	// it was taken over rather than on its own value.
+	RatesDenominator int
+
 	// Averages
 	AvgScore    float64
 	TopScore    float64

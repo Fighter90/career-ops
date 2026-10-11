@@ -283,13 +283,22 @@ func openCmd(target string) tea.Cmd {
 	}
 }
 
-// runGeneratePDF shells out to node generate-pdf.mjs in the career-ops root,
+// runGeneratePDF runs the checkout's generate-pdf.mjs against the selected data root,
 // opens the resulting PDF on success, and reports the outcome back to the
 // pipeline screen as a PipelinePDFGeneratedMsg. Runs in a tea.Cmd goroutine,
 // so the UI stays responsive while Chromium renders.
 func runGeneratePDF(msg screens.PipelineGeneratePDFMsg) tea.Cmd {
 	return func() tea.Msg {
-		args := []string{"generate-pdf.mjs", msg.HTMLPath, msg.PDFPath}
+		script, err := data.CheckoutScriptPath("generate-pdf.mjs")
+		if err != nil {
+			return screens.PipelinePDFGeneratedMsg{Err: err.Error()}
+		}
+		root, err := filepath.Abs(msg.CareerOpsPath)
+		if err != nil {
+			return screens.PipelinePDFGeneratedMsg{Err: err.Error()}
+		}
+		pdfAbs := filepath.Join(root, filepath.FromSlash(msg.PDFPath))
+		args := []string{script, filepath.Join(root, filepath.FromSlash(msg.HTMLPath)), pdfAbs}
 		if msg.Format != "" {
 			args = append(args, "--format="+msg.Format)
 		}
@@ -297,12 +306,23 @@ func runGeneratePDF(msg screens.PipelineGeneratePDFMsg) tea.Cmd {
 			args = append(args, "--report="+msg.ReportNumber)
 		}
 		cmd := exec.Command("node", args...)
-		cmd.Dir = msg.CareerOpsPath
+		cmd.Dir = filepath.Dir(script)
+		cmd.Env = append(cmd.Environ(), "CAREER_OPS_ROOT="+root)
+		// Preserve relative overrides before changing the child's working directory.
+		if tracker := resolveEnvPath(os.Getenv("CAREER_OPS_TRACKER")); tracker != "" {
+			cmd.Env = append(cmd.Env, "CAREER_OPS_TRACKER="+tracker)
+		}
+		if index := os.Getenv("CAREER_OPS_PDF_INDEX"); index != "" {
+			absolute, err := filepath.Abs(index)
+			if err != nil {
+				return screens.PipelinePDFGeneratedMsg{Err: err.Error()}
+			}
+			cmd.Env = append(cmd.Env, "CAREER_OPS_PDF_INDEX="+absolute)
+		}
 		out, err := cmd.CombinedOutput()
 		if err != nil {
 			return screens.PipelinePDFGeneratedMsg{Err: summarizeCmdError(err, out)}
 		}
-		pdfAbs := filepath.Join(msg.CareerOpsPath, filepath.FromSlash(msg.PDFPath))
 		if err := openWithDefaultApp(pdfAbs); err != nil {
 			return screens.PipelinePDFGeneratedMsg{Err: fmt.Sprintf("PDF generated but could not open: %v", err)}
 		}
@@ -336,17 +356,26 @@ func (m appModel) View() string {
 	}
 }
 
+// getRepoRoot defers to internal/data, which already walks up from cwd looking
+// for path-resolver.mjs and is the function a relative CAREER_OPS_TRACKER
+// resolves through.
+//
+// This used to be a second, shorter search — cwd and cwd's PARENT, then a
+// silent fallback to cwd — so from anywhere deeper the data root and the
+// tracker could anchor to different directories. One walker, one answer.
 func getRepoRoot() string {
-	cwd, err := os.Getwd()
+	root, err := data.FindRepoRoot()
 	if err != nil {
+		// The checkout could not be examined, which is not the same as not
+		// being there. Say so: everything below resolves against this.
+		fmt.Fprintf(os.Stderr, "Warning: %v\n", err)
+	}
+	if root != "" {
+		return root
+	}
+	cwd, wdErr := os.Getwd()
+	if wdErr != nil {
 		return "."
-	}
-	if _, err := os.Stat(filepath.Join(cwd, "path-resolver.mjs")); err == nil {
-		return cwd
-	}
-	parent := filepath.Dir(cwd)
-	if _, err := os.Stat(filepath.Join(parent, "path-resolver.mjs")); err == nil {
-		return parent
 	}
 	return cwd
 }
@@ -359,7 +388,31 @@ func resolveEnvPath(envVal string) string {
 	if filepath.IsAbs(trimmed) {
 		return filepath.Clean(trimmed)
 	}
-	return filepath.Clean(filepath.Join(getRepoRoot(), trimmed))
+	root, err := data.FindRepoRoot()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: %v\n", err)
+	}
+	if root == "" {
+		// Anchoring to cwd here is a guess, and what is being guessed at is
+		// which tracker to read. Getting it wrong is invisible: the dashboard
+		// shows one file while every .mjs writer uses another, and neither side
+		// reports anything. The guess is still made — exiting would be worse
+		// for a user whose layout we cannot see — but it is said out loud, with
+		// the absolute path the reader can check.
+		cwd, wdErr := os.Getwd()
+		if wdErr != nil {
+			return filepath.Clean(trimmed)
+		}
+		resolved := filepath.Clean(filepath.Join(cwd, trimmed))
+		fmt.Fprintf(os.Stderr,
+			"Warning: no career-ops checkout found above the working directory or the executable, "+
+				"so the relative path %q was resolved against the working directory: %s\n"+
+				"         The .mjs scripts resolve it against the repository root, so they may be using a "+
+				"different tracker. Pass an absolute path or --path to be sure.\n",
+			trimmed, resolved)
+		return resolved
+	}
+	return filepath.Clean(filepath.Join(root, trimmed))
 }
 
 func main() {
