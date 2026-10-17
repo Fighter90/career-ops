@@ -109,6 +109,17 @@ type PipelineHistoryFailedMsg struct {
 	Err string
 }
 
+// PipelineTrackerFailedMsg reports that the tracker could not be read and the
+// screen is still showing the previous applications.
+//
+// Sibling of PipelineHistoryFailedMsg, for the more consequential of the two
+// files: rebuilding the pipeline from a failed tracker read empties it, and
+// ComputeProgressMetrics then reports every rate as 0% — an empty pipeline and
+// a search that looks like it is failing, because a file could not be opened.
+type PipelineTrackerFailedMsg struct {
+	Err string
+}
+
 // PipelineOpenProgressMsg is emitted when the progress screen should open.
 type PipelineOpenProgressMsg struct{}
 
@@ -513,6 +524,9 @@ func (m PipelineModel) Update(msg tea.Msg) (PipelineModel, tea.Cmd) {
 	case PipelineHistoryFailedMsg:
 		m.flash = "Status history unavailable; progress uses previous data: " + msg.Err
 		return m, nil
+	case PipelineTrackerFailedMsg:
+		m.flash = "Tracker unavailable; showing previous applications: " + msg.Err
+		return m, nil
 	case pipelineStartDiscardPickerMsg:
 		// Issue 1380: initialise the discard reason picker state.
 		// Merge predicted reasons (from report) with canonical fallback options.
@@ -655,7 +669,7 @@ func (m PipelineModel) handleKey(msg tea.KeyMsg) (PipelineModel, tea.Cmd) {
 	case "d":
 		if app, ok := m.CurrentApp(); ok {
 			manifest := data.LoadPDFManifest(m.careerOpsPath)
-			candidates := data.ResolvePDFs(m.careerOpsPath, app, manifest)
+			candidates := data.ResolvePDFs(data.PDFWorkspaceRoot(m.careerOpsPath), app, manifest)
 			if len(candidates) == 0 {
 				m.flash = "No CV PDF found for this application — generate one with /career-ops pdf"
 			} else {
@@ -665,13 +679,14 @@ func (m PipelineModel) handleKey(msg tea.KeyMsg) (PipelineModel, tea.Cmd) {
 
 	case "D":
 		if app, ok := m.CurrentApp(); ok {
+			workspaceRoot := data.PDFWorkspaceRoot(m.careerOpsPath)
 			manifest := data.LoadPDFManifest(m.careerOpsPath)
 			entry, found := manifest.Lookup(app)
 			// Manifest lookup requires a report number; fall back to PDF-path
 			// index when the manifest was written without --report (common case).
 			if !found || entry.HTMLPath == "" {
 				byPath := data.LoadPDFEntriesByPath(m.careerOpsPath)
-				candidates := data.ResolvePDFs(m.careerOpsPath, app, manifest)
+				candidates := data.ResolvePDFs(workspaceRoot, app, manifest)
 				for _, c := range candidates {
 					if e, ok := byPath[c]; ok && e.HTMLPath != "" {
 						entry = e
@@ -684,12 +699,12 @@ func (m PipelineModel) handleKey(msg tea.KeyMsg) (PipelineModel, tea.Cmd) {
 				m.flash = "No source HTML found for this application — run /career-ops pdf first"
 				return m, nil
 			}
-			if _, err := os.Stat(filepath.Join(m.careerOpsPath, filepath.FromSlash(entry.HTMLPath))); err != nil {
+			if _, err := os.Stat(filepath.Join(workspaceRoot, filepath.FromSlash(entry.HTMLPath))); err != nil {
 				m.flash = "Source HTML missing: " + entry.HTMLPath
 				return m, nil
 			}
 			m.flash = "Regenerating PDF via generate-pdf.mjs — this takes a few seconds..."
-			path, report := m.careerOpsPath, entry.ReportNumber
+			path, report := workspaceRoot, entry.ReportNumber
 			html, pdf, format := entry.HTMLPath, entry.PDFPath, entry.Format
 			return m, func() tea.Msg {
 				return PipelineGeneratePDFMsg{
@@ -1121,7 +1136,7 @@ func (m PipelineModel) handleColPicker(msg tea.KeyMsg) (PipelineModel, tea.Cmd) 
 
 // openPDFCmd emits a PipelineOpenPDFMsg for a root-relative PDF path.
 func (m PipelineModel) openPDFCmd(relPath string) tea.Cmd {
-	fullPath := filepath.Join(m.careerOpsPath, filepath.FromSlash(relPath))
+	fullPath := filepath.Join(data.PDFWorkspaceRoot(m.careerOpsPath), filepath.FromSlash(relPath))
 	return func() tea.Msg {
 		return PipelineOpenPDFMsg{Path: fullPath}
 	}

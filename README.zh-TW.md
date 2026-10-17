@@ -20,12 +20,15 @@
   <a href="README.ar.md">العربية</a> |
   <a href="README.hi.md">हिन्दी</a> |
   <a href="README.tr.md">Türkçe</a> |
-  <a href="README.vi.md">Tiếng Việt</a>
+  <a href="README.vi.md">Tiếng Việt</a> |
+  <a href="README.id.md">Bahasa Indonesia</a>
 </p>
+
+<p align="center"><a href="https://career-ops.org/zh?utm_source=readme&utm_content=zh-tw">網站目前只有簡體中文版：career-ops.org/zh</a></p>
 
 <!-- The non-breaking spaces (&nbsp;) and word joiners (&#8288;) below decide where each line wraps on a phone. Keep them when editing. -->
 
-<p align="center"><a href="https://github.com/santifer"><img src="docs/avatar-santifer.png" width="48" height="48" align="middle" alt="Santiago Fernández de Valderrama Aparicio"></a>&nbsp;&nbsp;<a href="https://github.com/santifer"><strong>santifer</strong></a></p>
+<p align="center"><a href="https://github.com/santifer"><img src="docs/avatar-santifer.png" width="48" height="48" align="middle" alt="Santiago Fernández de Valderrama Aparicio"></a>&nbsp;&nbsp;由 <a href="https://github.com/santifer"><strong>@santifer</strong></a> 建立</p>
 
 <p align="center">
 <strong>幾個月投出去的履歷，全都石&#8288;沉&#8288;大&#8288;海。</strong><br>
@@ -203,7 +206,7 @@ npx @santifer/career-ops init
 
 > 💡 `npx` 隨 [Node.js](https://nodejs.org) 一起提供：它只執行一次安裝程式，
 > 不會全域安裝任何東西。還沒有 Node？先安裝它。
-> （已經在用 Claude Code / Gemini / Codex CLI？那你已經有了。）
+> （已經在用 Claude Code / Codex CLI？那你已經有了。）
 
 這會把最新版本複製到 `./career-ops` 並安裝相依套件。然後：
 
@@ -367,7 +370,7 @@ agy
 /career-ops tracker
 ```
 
-這個 skill 按開放標準定義在 `.agents/skills/career-ops/SKILL.md` 中，並為每個支援的 CLI（例如 `.claude/`、`.cursor/`、`.qwen/`、`.antigravitycli/`、`.grok/`）建立了符號連結或引用。
+這個 skill 按開放標準定義在 `.agents/skills/career-ops/SKILL.md` 中，並為每個支援的 CLI（例如 `.claude/`、`.qwen/`、`.antigravitycli/`、`.grok/`）建立了符號連結或引用。 Cursor 會自動探索 `.agents/skills/` 中的共用 skill。
 
 ## Codex 整合
 

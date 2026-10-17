@@ -55,7 +55,10 @@ export function atsFromUrl(url) {
   let u;
   try { u = new URL(url); } catch { return { ats: null, host: null }; }
   const host = u.hostname.toLowerCase();
-  const seg = u.pathname.split('/').filter(Boolean).map(decodeURIComponent);
+  // A stray % in a pasted URL ("100%-remote") is not a valid escape and makes
+  // decodeURIComponent throw; keep such a segment as written.
+  const decode = (segment) => { try { return decodeURIComponent(segment); } catch { return segment; } };
+  const seg = u.pathname.split('/').filter(Boolean).map(decode);
   if (/(^|\.)greenhouse\.io$/.test(host)) {
     if (seg[0] && !['embed', 'v1'].includes(seg[0])) return { ats: 'greenhouse', slug: seg[0].toLowerCase(), host };
     const forParam = u.searchParams.get('for');
@@ -268,6 +271,10 @@ async function main() {
   const posting = { url, company: flagValue(args, '--company') || '', title: flagValue(args, '--title') || '', location: flagValue(args, '--location') || '' };
   if (!posting.url || !posting.company || !posting.title) {
     console.error(`Error: a URL, --company and --title are required\n\n${USAGE}`);
+    process.exit(1);
+  }
+  if (!existsSync(PORTALS_PATH)) {
+    console.error(`Error: portals.yml not found at ${PORTALS_PATH}. Run onboarding first - the check reads its title_filter and tracked_companies.`);
     process.exit(1);
   }
   const ctx = { ...loadContext(), providers: await loadProviders(path.join(CODE_ROOT, 'providers')) };

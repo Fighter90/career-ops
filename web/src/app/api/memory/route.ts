@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { readMemory, rememberFact } from "@/lib/career-ops";
+import { readJsonObject } from "@/lib/json-body";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -12,12 +13,8 @@ export async function GET() {
 // CANONICAL modes/_profile.md (single source of truth) so the CLI/TUI see it too
 // — never a web-only memory store.
 export async function POST(req: Request) {
-  let b: { fact?: string };
-  try {
-    b = await req.json();
-  } catch {
-    return NextResponse.json({ error: "bad json" }, { status: 400 });
-  }
+  const b = await readJsonObject<{ fact?: string }>(req);
+  if (!b) return NextResponse.json({ error: "bad json" }, { status: 400 });
   const fact = (b.fact ?? "").toString();
   if (!fact.trim()) return NextResponse.json({ error: "fact required" }, { status: 400 });
 

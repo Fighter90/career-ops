@@ -305,7 +305,7 @@
 
 ### 2. 登錄到 Tracker 紀錄簿
 
-在 `data/applications.md` 的末尾追加這筆紀錄：
+將這筆紀錄登記到 tracker：寫入 TSV 檔（`_shared.md` 的規則 9），再以 `node merge-tracker.mjs` 合併；嚴禁直接在 `data/applications.md` 中手動新增資料列。欄位：
 - 依序遞增的 ID 編號
 - 日期
 - 公司名稱

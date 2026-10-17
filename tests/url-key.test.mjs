@@ -25,7 +25,7 @@ import { fileURLToPath } from 'node:url';
 const inheritedDomainsPath = process.env.CAREER_OPS_AGGREGATOR_DOMAINS;
 process.env.CAREER_OPS_AGGREGATOR_DOMAINS =
   fileURLToPath(new URL('../data-static/aggregator-domains.txt', import.meta.url));
-const { normalizeUrl, isAggregatorUrl, aggregatorPostingId } =
+const { normalizeUrl, isAggregatorUrl, aggregatorPostingId, postingLanguageKey, postingUrlRelation } =
   await import('../url-key.mjs?shipped-aggregator-list');
 // Put the environment back: the suites after this one share the process.
 if (inheritedDomainsPath === undefined) delete process.env.CAREER_OPS_AGGREGATOR_DOMAINS;
@@ -209,6 +209,18 @@ ok('LinkedIn: bare id, title slug and currentJobId are one posting id', () => {
   // Different ids are different postings — that is the whole point.
   assert.notEqual(aggregatorPostingId('https://www.linkedin.com/jobs/view/4002').id, '4001');
 });
+ok('LinkedIn: the /comm/ link an alert email carries is the same posting id', () => {
+  // linkedin.com answers /comm/jobs/view/{id} with a 307 whose session_redirect
+  // is /jobs/view/{id}: the tracking wrapper and the view are one requisition.
+  assert.deepEqual(aggregatorPostingId('https://www.linkedin.com/comm/jobs/view/4001?trk=eml-job_card&trkEmail=eml-x'),
+    { domain: 'linkedin.com', id: '4001' });
+  assert.deepEqual(aggregatorPostingId('https://www.linkedin.com/comm/jobs/view/4001/'),
+    { domain: 'linkedin.com', id: '4001' });
+  // Only the verified shape: the email's other /comm/ links carry no posting.
+  assert.equal(aggregatorPostingId('https://www.linkedin.com/comm/jobs/view/not-a-number'), null);
+  assert.equal(aggregatorPostingId('https://www.linkedin.com/comm/jobs/search?keywords=pm'), null);
+  assert.equal(aggregatorPostingId('https://www.linkedin.com/comm/psettings/email'), null);
+});
 ok('Indeed: jk (and vjk on a results page) is the posting id, the region host is not', () => {
   assert.deepEqual(aggregatorPostingId('https://uk.indeed.com/viewjob?jk=abc123'),
     { domain: 'indeed.com', id: 'abc123' });
@@ -231,4 +243,32 @@ ok('the lookalike-host and root-label guards hold for the id too', () => {
   assert.equal(aggregatorPostingId('https://linkedin.com.evil.example/jobs/view/4001'), null);
   assert.deepEqual(aggregatorPostingId('https://linkedin.com./jobs/view/4001'),
     { domain: 'linkedin.com', id: '4001' });
+});
+
+console.log('\npostingLanguageKey() / postingUrlRelation()');
+ok('the language param leaves the key and comes back as its language subtag', () => {
+  const bare = postingLanguageKey('https://acme.recruitee.com/o/qa-lead');
+  assert.deepEqual(bare, { key: normalizeUrl('https://acme.recruitee.com/o/qa-lead'), language: '' });
+  assert.deepEqual(postingLanguageKey('https://acme.recruitee.com/o/qa-lead?lang=de'), { key: bare.key, language: 'de' });
+  assert.deepEqual(postingLanguageKey('https://acme.jobs.personio.de/job/1?language=en-GB&utm_source=x'),
+    { key: normalizeUrl('https://acme.jobs.personio.de/job/1'), language: 'en' });
+  assert.deepEqual(postingLanguageKey('https://jobs.example.com/j/1?Locale=fr_CA&id=7'),
+    { key: normalizeUrl('https://jobs.example.com/j/1?id=7'), language: 'fr' });
+});
+ok('a non-URL keeps normalizeUrl\'s "no key" and has no language', () => {
+  for (const v of ['', 'N/A', null, 'local:jds/x.md']) assert.deepEqual(postingLanguageKey(v), { key: '', language: '' });
+});
+ok('different pages are distinct; no key on either side is no evidence', () => {
+  assert.equal(postingUrlRelation('https://acme.recruitee.com/o/a', 'https://acme.recruitee.com/o/b'), 'distinct');
+  assert.equal(postingUrlRelation('https://acme.recruitee.com/o/a', 'N/A'), 'no-key');
+  assert.equal(postingUrlRelation('', 'https://acme.recruitee.com/o/a'), 'no-key');
+});
+ok('the same page with a language on one side only is its own relation, in either order', () => {
+  assert.equal(postingUrlRelation('https://acme.recruitee.com/o/a', 'https://acme.recruitee.com/o/a?lang=de'), 'one-sided-language');
+  assert.equal(postingUrlRelation('https://acme.jobs.personio.de/job/1?language=en', 'https://acme.jobs.personio.de/job/1'), 'one-sided-language');
+});
+ok('two known, different languages are distinct; the same language (any region) or none is the same', () => {
+  assert.equal(postingUrlRelation('https://acme.recruitee.com/o/a?lang=de', 'https://acme.recruitee.com/o/a?lang=en'), 'distinct');
+  assert.equal(postingUrlRelation('https://acme.recruitee.com/o/a?lang=en-GB', 'https://acme.recruitee.com/o/a?lang=en'), 'same');
+  assert.equal(postingUrlRelation('http://acme.recruitee.com/o/a/?utm_source=x', 'https://acme.recruitee.com/o/a'), 'same');
 });

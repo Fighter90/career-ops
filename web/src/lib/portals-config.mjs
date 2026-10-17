@@ -95,3 +95,29 @@ export function mergePortalFilters(doc, roles, locations) {
 
   return merged;
 }
+
+/**
+ * @typedef {{ name: string, enabled: boolean, host: string }} WatchedCompany
+ */
+
+/**
+ * The companies in tracked_companies, scanned ones first, so the Portals page
+ * can list them before any health check runs.
+ *
+ * @param {Record<string, unknown>} doc
+ * @returns {WatchedCompany[]}
+ */
+export function watchedCompanies(doc) {
+  const list = Array.isArray(doc.tracked_companies) ? doc.tracked_companies : [];
+  const hostOf = (url) => {
+    try {
+      return new URL(String(url)).host;
+    } catch {
+      return "";
+    }
+  };
+  return list
+    .filter((c) => isMapping(c) && typeof c.name === "string" && c.name.trim())
+    .map((c) => ({ name: c.name.trim(), enabled: c.enabled !== false, host: hostOf(c.careers_url ?? c.api) }))
+    .sort((a, b) => Number(b.enabled) - Number(a.enabled));
+}

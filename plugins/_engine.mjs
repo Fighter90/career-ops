@@ -28,8 +28,9 @@ import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from 'f
 import path from 'path';
 import { pathToFileURL } from 'url';
 import { resolveAndValidate } from './_net.mjs';
-import { normalizeUrl } from '../url-key.mjs';
-import { readLock, writeLockEntry, diffPlugin, hashPluginTree, consentSurface } from './_lock.mjs';
+import { normalizeUrl, aggregatorPostingId } from '../url-key.mjs';
+import { getCareerOpsRoot } from '../path-resolver.mjs';
+import { readLock, writeLockEntry, diffPlugin, describeDrift, hashPluginTree, consentSurface } from './_lock.mjs';
 import { loadRegistry } from './_registry.mjs';
 
 /** The complete, closed set of hook kinds. Anything else (apply/submit/…) is rejected. */
@@ -477,7 +478,7 @@ function makeGuardedFetch(allowedHosts, { allowsLocalhost = false } = {}) {
  * CONVENIENCE (process.env is still globally reachable from any module) — the
  * real boundary is code review + trust.
  * @param {PluginManifestNormalized} manifest
- * @param {{ dryRun?: boolean, settings?: object }} [opts]
+ * @param {{ dryRun?: boolean, settings?: object, dataRoot?: string }} [opts]
  * @returns {PluginContext}
  */
 export function buildCtx(manifest, opts = {}) {
@@ -512,11 +513,22 @@ export function buildCtx(manifest, opts = {}) {
     settings: Object.freeze({ ...(opts.settings || {}) }),
     log,
     dryRun: opts.dryRun === true,
+    // Where the user layer lives. A plugin that keeps a file of its own (a
+    // cursor, a JD capture) resolves it from here: a bare relative path lands in
+    // the working directory, which is the data root only when the two coincide.
+    // The engine's callers pass the root they resolved; a ctx built without one
+    // gets the same answer from the resolver they use.
+    dataRoot: path.resolve(opts.dataRoot ?? getCareerOpsRoot()),
     // The canonical posting-URL key, so a plugin can deduplicate the postings it
     // returns the way the tracker and scanner do. Reaching it through ctx keeps
     // plugin and core callers equivalent without a repository-relative import or
     // a copied body, which is the whole point of the capability (#4218).
     normalizePostingUrl: normalizeUrl,
+    // The requisition id an aggregator URL carries (LinkedIn's job id, Indeed's
+    // `jk`). normalizePostingUrl keeps the path, so two spellings of one posting
+    // on an aggregator — a `/comm/` tracking link and the canonical view — key
+    // apart; the id is what they share. Same function the tracker's merge uses.
+    aggregatorPostingId,
   });
 }
 
@@ -625,7 +637,7 @@ export function lockGate(manifest, root) {
     case 'legit-update': repin(); return { load: true };        // version bumped → honest update, re-pin quietly
     case 'drift-nobump':
       if (source === 'bundled') { repin(); return { load: true }; } // reviewed-by-construction (branch-protected checkout) → re-pin
-      warnSkip(manifest.id, `files changed since you trusted it without a version bump — possible tampering (${d.changedFiles.slice(0, 5).join(', ')}). Review, then \`node plugins.mjs trust ${manifest.id}\``);
+      warnSkip(manifest.id, `files changed since you trusted it without a version bump — possible tampering (${describeDrift(d)}). Review, then \`node plugins.mjs trust ${manifest.id}\``);
       return { load: false };
     case 'surface-widened':
       warnSkip(manifest.id, `capability surface expanded since you consented (${[...d.addedHosts, ...d.addedEnv].join(', ')}${manifest.allowsLocalhost ? ', localhost' : ''}) — re-consent: \`node plugins.mjs enable ${manifest.id}\``);
@@ -644,7 +656,7 @@ export async function loadPlugins(kind, { root, dataRoot = root, dryRun = false,
     if (!lockGate(manifest, root).load) continue;
     const hook = await importHook(manifest, kind);
     if (!hook) continue;
-    out.push({ id: manifest.id, manifest, hook, ctx: buildCtx(manifest, { dryRun, settings: pluginSettings(manifest.id, cfg) }) });
+    out.push({ id: manifest.id, manifest, hook, ctx: buildCtx(manifest, { dryRun, dataRoot, settings: pluginSettings(manifest.id, cfg) }) });
   }
   return out;
 }
@@ -781,7 +793,7 @@ export async function mergeProviderPlugins(providersMap, { root, dataRoot = root
         providersMap.set(manifest.id, inactiveProviderStub(manifest.id, 'failed to load — see ⚠️ above'));
         continue;
       }
-      const ctx = buildCtx(manifest, { settings: pluginSettings(manifest.id, cfg) });
+      const ctx = buildCtx(manifest, { dataRoot, settings: pluginSettings(manifest.id, cfg) });
       providersMap.set(manifest.id, {
         id: manifest.id,
         detect: () => null, // (4) keyed providers never auto-detect

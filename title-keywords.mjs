@@ -124,6 +124,15 @@ export function foldAccents(s) {
   return String(s ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 }
 
+// Lowercase, fold accents and collapse whitespace runs. Boards ship titles
+// with no-break spaces and doubled spaces ("Product\u00a0Manager"), and a
+// multi-word keyword is a substring test, so without the collapse the
+// positive "product manager" missed and the negative "sales engineer" let
+// the posting through.
+export function foldTitle(s) {
+  return foldAccents(String(s ?? '').toLowerCase()).replace(/\s+/g, ' ');
+}
+
 export function compileKeyword(kw) {
   const prefixed = compilePrefixedKeyword(kw);
   if (prefixed) return prefixed;
@@ -226,7 +235,7 @@ function compileAndGroup(keyword, compileTerm) {
 function normalizeKeywords(arr, compile) {
   return (Array.isArray(arr) ? arr : [])
     .filter(k => typeof k === 'string')
-    .map(k => foldAccents(k.trim().toLowerCase()))
+    .map(k => foldTitle(k).trim())
     .filter(k => k.length > 0)
     .map(compile);
 }
@@ -323,7 +332,7 @@ export function buildDomainFilter(domainKeywords) {
   if (matchers.length === 0) return null;
   return (title) => {
     // Folded like the keywords, so an accented posting still matches (#4458).
-    const lower = foldAccents(String(title ?? '').toLowerCase());
+    const lower = foldTitle(title);
     return matchers.some(m => m(lower));
   };
 }
@@ -355,7 +364,7 @@ export function buildTitleFilter(titleFilter) {
     // non-string. Consolidating on scan.mjs's version would have carried that
     // throw onto a path that never had it, where it aborts jobs.filter and
     // drops a whole company's results for one malformed title.
-    const lower = foldAccents(String(title ?? '').toLowerCase());
+    const lower = foldTitle(title);
     // An empty positive list is "no positive constraint", not "match nothing":
     // a negative-only title_filter is a legitimate config that rejects a few
     // roles and keeps the rest.

@@ -20,12 +20,13 @@
   <a href="README.ar.md">العربية</a> |
   <a href="README.hi.md">हिन्दी</a> |
   <a href="README.tr.md">Türkçe</a> |
-  <a href="README.vi.md">Tiếng Việt</a>
+  <a href="README.vi.md">Tiếng Việt</a> |
+  <a href="README.id.md">Bahasa Indonesia</a>
 </p>
 
 <!-- The non-breaking spaces (&nbsp;) and word joiners (&#8288;) below decide where each line wraps on a phone. Keep them when editing. -->
 
-<p align="center"><a href="https://github.com/santifer"><img src="docs/avatar-santifer.png" width="48" height="48" align="middle" alt="Santiago Fernández de Valderrama Aparicio"></a>&nbsp;&nbsp;<a href="https://github.com/santifer"><strong>santifer</strong></a></p>
+<p align="center"><a href="https://github.com/santifer"><img src="docs/avatar-santifer.png" width="48" height="48" align="middle" alt="Santiago Fernández de Valderrama Aparicio"></a>&nbsp;&nbsp;作成者: <a href="https://github.com/santifer"><strong>@santifer</strong></a></p>
 
 <p align="center">
 <strong>何か月も履歴書を送り続けて、返&#8288;事&#8288;は&#8288;沈&#8288;黙。</strong><br>
@@ -203,7 +204,7 @@ npx @santifer/career-ops init
 
 > 💡 `npx` は [Node.js](https://nodejs.org) に同梱されています：グローバルに何もインストールせず、
 > インストーラーを 1 回だけ実行します。Node がまだ？ 先にインストールしてください。
-> （すでに Claude Code / Gemini / Codex の CLI を使っている？ ならもう入っています。）
+> （すでに Claude Code / Codex の CLI を使っている？ ならもう入っています。）
 
 これで最新リリースが `./career-ops` にクローンされ、依存関係がインストールされます。次に：
 
@@ -367,7 +368,7 @@ agy
 /career-ops tracker
 ```
 
-スキルはオープン標準に従って `.agents/skills/career-ops/SKILL.md` に定義され、サポートされる各 CLI（例：`.claude/`、`.cursor/`、`.qwen/`、`.antigravitycli/`、`.grok/`）にシンボリックリンクまたは参照されています。
+スキルはオープン標準に従って `.agents/skills/career-ops/SKILL.md` に定義され、サポートされる各 CLI（例：`.claude/`、`.qwen/`、`.antigravitycli/`、`.grok/`）にシンボリックリンクまたは参照されています。 Cursor は `.agents/skills/` 内の共有スキルを自動的に検出します。
 
 ## Codex 連携
 

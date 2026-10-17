@@ -11,7 +11,10 @@
  * @typedef {{skill: string, reports: number, lowFitReports: number,
  *            weightedScore: number, tier: string, sources: number[]}} Gap
  * @typedef {{kind: "no-known-skills"|"thin-coverage", text: string}} Caveat
+ * @typedef {{label: string, skips: number, missing: number, partial: number,
+ *            closeCalls: number, nudge: "learn"|"evidence", reports: number[]}} Blocker
  * @typedef {{available: boolean, reason: string|null, gaps: Gap[], caveats: Caveat[],
+ *            blockers: Blocker[], skips: number,
  *            reportsWithMachineSummary: number, reportsRead: number}} SkillGapModel
  */
 
@@ -29,6 +32,8 @@ export function skillGapModel(payload, limit = 8) {
       reason: typeof payload?.reason === "string" ? payload.reason : "unavailable",
       gaps: [],
       caveats: [],
+      blockers: [],
+      skips: 0,
       reportsWithMachineSummary: 0,
       reportsRead: 0,
     };
@@ -79,11 +84,17 @@ export function skillGapModel(payload, limit = 8) {
     });
   }
 
+  const sb = d.skipBlockers ?? {};
+  const blockers = (Array.isArray(sb.blockers) ? sb.blockers : [])
+    .filter((b) => b && typeof b.label === "string" && b.label.trim() !== "" && num(b.skips) > 0);
+
   return {
     available: true,
     reason: null,
     gaps,
     caveats,
+    blockers,
+    skips: num(sb.skips),
     reportsWithMachineSummary: withMs,
     reportsRead: read,
   };
@@ -104,6 +115,26 @@ export function barPct(gap, all) {
   if (top <= 0) return 0;
   const v = Number.isFinite(gap.weightedScore) ? gap.weightedScore : 0;
   return Math.max(2, Math.round((v / top) * 100));
+}
+
+const NUDGE = {
+  learn: "Your CV does not show this. Learn it, or aim at roles that do not ask for it.",
+  evidence: "Your CV shows some of this. If you have done more, add a bullet with the scope and the result.",
+};
+
+/**
+ * The two lines under a skip blocker: how the evaluator judged it, and what to do.
+ *
+ * @param {Blocker} b
+ * @returns {{verdict: string, nudge: string}}
+ */
+export function blockerText(b) {
+  const parts = [];
+  if (b.missing === b.skips) parts.push(`missing in all ${b.skips}`);
+  else if (b.partial === b.skips) parts.push(`partial in all ${b.skips}`);
+  else parts.push(`missing in ${b.missing}, partial in ${b.partial}`);
+  if (b.closeCalls > 0) parts.push(`${b.closeCalls} scored 3.5 or higher`);
+  return { verdict: parts.join(" · "), nudge: NUDGE[b.nudge] ?? NUDGE.learn };
 }
 
 function num(v) {

@@ -4,6 +4,7 @@ import fs from "node:fs";
 import { careerOpsRoot, rootScript } from "@/lib/career-ops";
 import { canonicalizeStatus } from "@/lib/core/states";
 import { parseCliJson, trackerRowArg, clientErrorMessage } from "@/lib/status-cli.mjs";
+import { readJsonObject } from "@/lib/json-body";
 
 export const runtime = "nodejs"; // delegates to the core CLI via child_process
 
@@ -105,12 +106,8 @@ function runSetStatus(args: string[]): Promise<CliResult> {
 // the document from the end rather than from the first `{`.
 
 export async function POST(req: Request) {
-  let body: { n?: string; status?: string };
-  try {
-    body = await req.json();
-  } catch {
-    return NextResponse.json({ error: "bad json" }, { status: 400 });
-  }
+  const body = await readJsonObject<{ n?: string; status?: string }>(req);
+  if (!body) return NextResponse.json({ error: "bad json" }, { status: 400 });
   const { n, status } = body;
   if (!n || typeof status !== "string" || !status.trim()) {
     return NextResponse.json({ error: "n and status required" }, { status: 400 });

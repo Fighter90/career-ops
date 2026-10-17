@@ -30,7 +30,7 @@ import { fileURLToPath } from 'url';
 import { getCareerOpsRoot, resolveTrackerPath } from './path-resolver.mjs';
 import {
   looksLikeScoreCell, isSeparatorRow, isHeaderRow, resolveColumns,
-  normalizeTextKey, normalizeVia,
+  normalizeTextKey, normalizeVia, unwrapReportUrlToken,
 } from './tracker-parse.mjs';
 import { CONTROL_CHARS, findDeadReportLink } from './tracker-utils.mjs';
 import { normalizeUrl } from './url-key.mjs';
@@ -317,7 +317,7 @@ function extractRole(reportContent) {
 function extractReportUrlKey(reportContent) {
   const m = reportContent.match(/\*\*URL:\*\*[ \t]*(\S+)/);
   if (!m) return '';
-  return normalizeUrl(m[1].replace(/^<|>$/g, '').replace(/[),.;]+$/, ''));
+  return normalizeUrl(unwrapReportUrlToken(m[1]));
 }
 
 const reportFiles = existsSync(REPORTS_DIR)

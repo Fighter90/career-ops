@@ -30,6 +30,7 @@ import { loadRegistry, findInRegistry, classifySource, sourceBadge, successorFor
 import { readLock, writeLockEntry, removeLockEntry, hashPluginTree, consentSurface } from './plugins/_lock.mjs';
 import { installFromRepo, scaffoldNew, parseRepoArg } from './plugin-install.mjs';
 import { appendToPipeline } from './scan.mjs';
+import { postingKey } from './url-key.mjs';
 import { isMainModule } from './lib/is-main-module.mjs';
 import { getCareerOpsRoot } from './path-resolver.mjs';
 
@@ -82,6 +83,17 @@ function existingPipelineUrls() {
   const text = readFileSync(PIPELINE_PATH, 'utf8');
   for (const m of text.matchAll(/- \[[ xX]\]\s+(\S+)/g)) urls.add(m[1]);
   return urls;
+}
+
+/** Jobs whose posting is not in the pipeline yet, one per posting. */
+export function newPipelineJobs(found, pipelineUrls) {
+  const seen = new Set([...pipelineUrls].map(postingKey));
+  return found.filter((j) => {
+    const key = postingKey(j.url) || j.url;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 /** Frozen, read-only view of the user's tracker for `export` hooks. No file handle. */
@@ -169,10 +181,7 @@ async function cmdRun(args) {
     if (hook === 'search' && !payload) { console.error(`search needs a query: node plugins.mjs run ${id} search "<query>"`); process.exit(1); }
     const results = filterResultsForId(await runHook(hook, payload, { root: ROOT, dataRoot: DATA_ROOT, dryRun, pluginId: id }), id);
     const found = results.filter(r => r.ok && Array.isArray(r.result)).flatMap(r => r.result).map(sanitizeJob).filter(Boolean);
-    // Additive de-dup: never re-add a URL already in the pipeline.
-    const known = existingPipelineUrls();
-    const seen = new Set();
-    const jobs = found.filter(j => !known.has(j.url) && !seen.has(j.url) && seen.add(j.url));
+    const jobs = newPipelineJobs(found, existingPipelineUrls());
     console.log(`${id} ${hook}: ${found.length} found, ${jobs.length} new.`);
     if (dryRun) { jobs.slice(0, 20).forEach(j => console.log(`  • ${j.title} — ${j.url}`)); console.log('(--dry-run: pipeline not written)'); return; }
     if (jobs.length) { await appendToPipeline(jobs); console.log(`→ Appended ${jobs.length} to data/pipeline.md. Run /career-ops pipeline to evaluate.`); }

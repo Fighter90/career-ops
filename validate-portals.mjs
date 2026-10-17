@@ -244,6 +244,22 @@ export async function validatePortalsConfig(config, { providerIds = new Set() } 
     }
   }
 
+  // The languages a posting is wanted in, best first. scan.mjs skips an entry
+  // it cannot read, so a malformed list would quietly fall back to the default
+  // version — the typo can only surface here.
+  if (config.preferred_languages !== undefined) {
+    const list = config.preferred_languages;
+    if (!Array.isArray(list) && typeof list !== 'string') {
+      add(errors, 'preferred_languages', 'preferred_languages must be a list of language codes (e.g. [en])');
+    } else {
+      (Array.isArray(list) ? list : [list]).forEach((entry, idx) => {
+        if (typeof entry !== 'string' || !entry.trim()) {
+          add(errors, `preferred_languages[${idx}]`, 'each preferred language must be a non-empty language code');
+        }
+      });
+    }
+  }
+
   // #3438. Per-field whitelists a target can gate on instead of title. Each
   // block has the same shape as title_filter and is compiled by the same
   // buildTitleFilter(), so it gets the same structural checks for the same

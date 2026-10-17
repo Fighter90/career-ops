@@ -70,7 +70,7 @@ import { printScanSummaryHeader } from './lib/scan-summary-marker.mjs';
 import { SEED_SOURCES, toPortalEntry } from './seeds/vc-portfolios.mjs';
 import { validateFlags } from './lib/cli-flags.mjs';
 import { isMainModule } from './lib/is-main-module.mjs';
-import { boardKey, loadDeadBoards, recordBoardResult, saveDeadBoards, shouldSkipDeadBoard } from './dead-boards.mjs';
+import { boardKey, loadDeadBoards, recordBoardFailure, recordBoardResult, saveDeadBoards, shouldSkipDeadBoard } from './dead-boards.mjs';
 import { getCareerOpsRoot } from './path-resolver.mjs';
 import { barePrefixDomainKeywords, buildDomainFilter } from './title-keywords.mjs';
 import { KNOWN_ATS_VENDORS } from './ats-vendor.mjs';
@@ -162,6 +162,41 @@ export function checkpointCompatible(cp, opts) {
     && JSON.stringify(cp.ats) === JSON.stringify(opts.ats)
     && (cp.limit ?? null) === (opts.limit === Infinity ? null : opts.limit)
     && cp.includeUndated === opts.includeUndated;
+}
+
+// Flags are not the only settings a resume can mix. The portals.yml filters
+// decide which boards and postings the swept part kept, so a filter edited
+// between a run and its --resume leaves the checkpointed matches judged by one
+// configuration and the rest by another. Each filter is fingerprinted under its
+// own key, so the refusal can name what changed. title_filter_full replaces
+// title_filter when present, so the pair is recorded under whichever key the
+// sweep actually read. Keys are sorted before hashing: reordering a YAML
+// mapping changes nothing the sweep does.
+export function filterFingerprints(config) {
+  const titleKey = config?.title_filter_full ? 'title_filter_full' : 'title_filter';
+  const fp = (v) => datasetFingerprint(sortKeys(v ?? null));
+  return {
+    [titleKey]: fp(resolveTitleFilterConfig(config)),
+    title_filter_overrides: fp(config?.title_filter_overrides),
+    location_filter: fp(config?.location_filter),
+    content_filter: fp(config?.content_filter),
+    domain_filter: fp(config?.domain_filter),
+  };
+}
+
+function sortKeys(v) {
+  if (Array.isArray(v)) return v.map(sortKeys);
+  if (v && typeof v === 'object') {
+    return Object.fromEntries(Object.keys(v).sort().map((k) => [k, sortKeys(v[k])]));
+  }
+  return v;
+}
+
+// A checkpoint written before filters were recorded carries no fingerprints, so
+// there is nothing to compare and it resumes as it did before.
+export function changedFilterKeys(cp, fingerprints) {
+  if (!cp?.filters) return [];
+  return Object.keys(fingerprints).filter((k) => cp.filters[k] !== fingerprints[k]);
 }
 
 // Never throws: this runs from parallelEach's `finally`, so an escaping error
@@ -1125,6 +1160,12 @@ async function main() {
     process.exit(1);
   }
   const domainFilter = buildDomainFilter(config?.domain_filter);
+  const filters = filterFingerprints(config);
+  const changedFilters = changedFilterKeys(checkpoint, filters);
+  if (changedFilters.length) {
+    console.error(`Error: portals.yml ${changedFilters.join(', ')} changed since the checkpoint was written — the boards already swept were filtered under the old settings. Restore them to finish this sweep, or delete ${CHECKPOINT_PATH} to start fresh.`);
+    process.exit(1);
+  }
   if (!fullTitleFilterConfig?.positive?.length) {
     const key = config?.title_filter_full ? 'title_filter_full' : 'title_filter';
     console.error(`⚠️  portals.yml has no ${key}.positive — every fresh posting on every board will match. Consider adding keywords.`);
@@ -1300,6 +1341,7 @@ async function main() {
     ats: opts.ats,
     limit: opts.limit === Infinity ? null : opts.limit,
     includeUndated: opts.includeUndated,
+    filters,
     completedSources: [...completedSources],
     offers: newOffers,
     savedAt: new Date().toISOString(),
@@ -1482,7 +1524,7 @@ async function main() {
         // Mostly defunct boards in the public dataset — expected noise, so the
         // default stays quiet; --verbose surfaces per-board failures.
         errors++;
-        recordBoardResult(deadBoards, name, deadBoard, err?.status);
+        recordBoardFailure(deadBoards, name, deadBoard, err);
         // A dead board and a dead resolver look identical one at a time; only
         // the *consecutive* run tells them apart, so any non-resolver outcome
         // resets the count (#2229).
@@ -1568,7 +1610,7 @@ async function main() {
           })(), COMPANY_TIMEOUT_MS, `${name}/${entry.name} (retry)`));
         } catch (err) {
           errors++;
-          recordBoardResult(deadBoards, name, boardKey(entry), err?.status);
+          recordBoardFailure(deadBoards, name, boardKey(entry), err);
           if (opts.verbose) console.error(`  ✗ ${name}/${entry.name} (retry): ${err.message}`);
           // No fuller fetch is coming, so a deferred board's partial page is
           // admitted ungated, the fallback the retry takes for a board that

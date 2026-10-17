@@ -20,12 +20,15 @@
   <a href="README.ar.md">العربية</a> |
   <a href="README.hi.md">हिन्दी</a> |
   <a href="README.tr.md">Türkçe</a> |
-  <a href="README.vi.md">Tiếng Việt</a>
+  <a href="README.vi.md">Tiếng Việt</a> |
+  <a href="README.id.md">Bahasa Indonesia</a>
 </p>
+
+<p align="center"><a href="https://career-ops.org/de/docs?utm_source=readme&utm_content=de">Vollständige Dokumentation auf Deutsch: career-ops.org/de/docs</a></p>
 
 <!-- The non-breaking spaces (&nbsp;) and word joiners (&#8288;) below decide where each line wraps on a phone. Keep them when editing. -->
 
-<p align="center"><a href="https://github.com/santifer"><img src="docs/avatar-santifer.png" width="48" height="48" align="middle" alt="Santiago Fernández de Valderrama Aparicio"></a>&nbsp;&nbsp;<a href="https://github.com/santifer"><strong>santifer</strong></a></p>
+<p align="center"><a href="https://github.com/santifer"><img src="docs/avatar-santifer.png" width="48" height="48" align="middle" alt="Santiago Fernández de Valderrama Aparicio"></a>&nbsp;&nbsp;Erstellt von <a href="https://github.com/santifer"><strong>@santifer</strong></a></p>
 
 <p align="center">
 <strong>Monatelang Lebensläufe ins Leere&nbsp;geschickt.</strong><br>
@@ -203,7 +206,7 @@ npx @santifer/career-ops init
 
 > 💡 `npx` kommt mit [Node.js](https://nodejs.org): Es führt den Installer einmal aus,
 > ohne etwas global zu installieren. Noch kein Node? Installiere es zuerst.
-> (Nutzt du schon eine Claude Code / Gemini / Codex CLI? Dann hast du es bereits.)
+> (Nutzt du schon eine Claude Code / Codex CLI? Dann hast du es bereits.)
 
 Das klont das neueste Release nach `./career-ops` und installiert die Abhängigkeiten. Dann:
 
@@ -367,7 +370,7 @@ agy
 /career-ops tracker
 ```
 
-Der Skill ist nach dem offenen Standard in `.agents/skills/career-ops/SKILL.md` definiert und für jede unterstützte CLI verlinkt oder referenziert (z. B. `.claude/`, `.cursor/`, `.qwen/`, `.antigravitycli/`, `.grok/`).
+Der Skill ist nach dem offenen Standard in `.agents/skills/career-ops/SKILL.md` definiert und für jede unterstützte CLI verlinkt oder referenziert (z. B. `.claude/`, `.qwen/`, `.antigravitycli/`, `.grok/`). Cursor entdeckt den gemeinsamen Skill in `.agents/skills/` automatisch.
 
 ## Codex-Integration
 

@@ -51,6 +51,8 @@ const SCRIPTS = [
   ['scan-interamt.mjs', '--dryrun'],
   ['validate-portals.mjs', '--fiel'],
   ['validate-portals.mjs', '--self-tst'],
+  ['verify-portals.mjs', '--stict'],
+  ['verify-portals.mjs', '--flie'],
 ];
 
 for (const [script, typo] of SCRIPTS) {
@@ -681,13 +683,11 @@ for (const [form, args] of [
   });
 }
 
-// An explicit but empty `--file=` keeps its OWN pre-existing usage error: the
-// `--flag=value` form carries its own operand, so requireOperand never looks
-// at it, and the comment in main() says why resolve('') must not be reached.
-test('validate-portals.mjs still rejects an empty --file= with its usage error', () => {
+// An explicit but empty `--file=` is rejected as a missing operand by requireOperand (#5127).
+test('validate-portals.mjs rejects an empty --file= as a missing operand', () => {
   const r = runScript('validate-portals.mjs', '--file=');
   assert.equal(r.status, 1, `validate-portals.mjs --file= exited ${r.status}, want 1`);
-  assert.match(r.all, /Usage:/i, 'the empty --file= no longer reports usage');
+  assert.match(r.all, /--file requires a value/, 'the empty --file= must report a missing operand');
   assert.doesNotMatch(r.all, /unrecognized flag/i, '--file= must not read as an unrecognized flag');
 });
 

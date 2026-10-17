@@ -202,7 +202,7 @@ function applyProposalUpdate(update) {
 
 async function updateTrackerStatuses(updates, onApplied = null) {
   if (updates.length === 0) {
-    return { applied: new Set(), alreadyCurrent: new Set(), conflicts: new Map(), missing: new Set(), recommendationConflicts: [] };
+    return { applied: new Set(), alreadyCurrent: new Set(), conflicts: new Map(), reviewConflicts: new Set(), missing: new Set(), recommendationConflicts: [] };
   }
   const trackerTransaction = await openTrackerTransaction(APPS_FILE);
 
@@ -215,7 +215,11 @@ async function updateTrackerStatuses(updates, onApplied = null) {
     const applied = new Set();
     const alreadyCurrent = new Set();
     const conflicts = new Map();
+    const reviewConflicts = new Set();
     const missing = new Set(updatesByNum.keys());
+    const currentRows = lines.map(line => parseTrackerRow(line, colmap)).filter(Boolean);
+    const counts = new Map();
+    for (const row of currentRows) counts.set(row.num, (counts.get(row.num) || 0) + 1);
 
     for (let i = 0; i < lines.length; i++) {
       const row = parseTrackerRow(lines[i], colmap);
@@ -223,6 +227,18 @@ async function updateTrackerStatuses(updates, onApplied = null) {
       const update = updatesByNum.get(row.num);
       if (!update) continue;
       missing.delete(update.num);
+      // Consent belongs to the displayed application, not a reusable row number.
+      // Check under the writer lock so a replacement or duplicate cannot absorb it.
+      if (counts.get(row.num) !== 1) {
+        reviewConflicts.add(update.num);
+        continue;
+      }
+      // Compare identity before either status fast path. Status is checked
+      // separately below; raw includes that status cell's formatting.
+      if (JSON.stringify(row) !== JSON.stringify({ ...update.snapshot, status: row.status, raw: row.raw })) {
+        reviewConflicts.add(update.num);
+        continue;
+      }
       if (row.status === update.newStatus) {
         alreadyCurrent.add(update.num);
         continue;
@@ -241,7 +257,7 @@ async function updateTrackerStatuses(updates, onApplied = null) {
       trackerTransaction.replace(lines.join('\n'));
       if (onApplied) onApplied(applied, updatesByNum);
     }
-    return { applied, alreadyCurrent, conflicts, missing, recommendationConflicts: grouped.conflicts };
+    return { applied, alreadyCurrent, conflicts, reviewConflicts, missing, recommendationConflicts: grouped.conflicts };
   } finally {
     trackerTransaction.close();
   }
@@ -400,6 +416,8 @@ async function main() {
           console.log(`No change for #${r.num}: already ${r.newStatus}${count}`);
         } else if (result.conflicts.has(r.num)) {
           console.warn(`Skipped #${r.num}: status changed from ${r.oldStatus} to ${result.conflicts.get(r.num)} during review`);
+        } else if (result.reviewConflicts.has(r.num)) {
+          console.warn(`Skipped #${r.num}: tracker row changed or became ambiguous during review; review again`);
         } else if (result.missing.has(r.num)) {
           console.warn(`Skipped #${r.num}: row no longer exists in the tracker`);
         }

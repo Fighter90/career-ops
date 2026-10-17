@@ -8,7 +8,7 @@ Export a tailored, ATS-optimized CV as a `.tex` file and compile it to PDF via `
 2. Read `config/profile.yml` for candidate identity and contact info
 3. Ask the user for the JD if not already in context (text or URL)
 4. Extract 15-20 keywords from the JD
-5. Detect JD language → CV language (EN default)
+5. Use `language.output` for the CV language. The JD language and `language.modes_dir` supply market vocabulary and evaluation context, but never override the configured output language.
 6. Detect role archetype → adapt framing
 7. Rewrite Professional Summary injecting JD keywords (same rules as `pdf` mode — NEVER invent skills)
 8. Select top 3-4 most relevant projects for the offer, and populate `awards[]` from `cv.md`'s Awards / Honors section when it has entries that support the role (omit the key otherwise — the section is dropped, header included; never invent an award)
@@ -18,9 +18,13 @@ Export a tailored, ATS-optimized CV as a `.tex` file and compile it to PDF via `
 12. Run: `node build-cv-latex.mjs /tmp/cv-{candidate}-{company}.json output/cv-{candidate}-{company}-{YYYY-MM-DD}.tex`
 13. Run: `node generate-latex.mjs output/cv-{candidate}-{company}-{YYYY-MM-DD}.tex output/cv-{candidate}-{company}-{YYYY-MM-DD}.pdf`
     *(Replace `{candidate}`, `{company}`, `{YYYY-MM-DD}` with actual values.)*
+    - This runs the CV fact gate (`verify-cv-facts.mjs`) on the `.tex` before compiling, the same hard gate `pdf` mode runs in step 19. A blocked document is not compiled, and the JSON report carries `factCheck.verdict: "block"` with the claims it could not find in `cv.md` / `article-digest.md`.
+    - If it blocks, stop and fix the step 11 payload (remove the invented claim, or add verified evidence to `cv.md`, `article-digest.md` or `config/cv-facts.json`), rebuild the `.tex`, and re-run. Never pass `--skip-fact-check` unless the user explicitly asks for it.
 14. Report: .tex path, .pdf path, file sizes, section count, keyword coverage %
 
-**Requires:** `tectonic` (preferred — `brew install tectonic`, auto-downloads packages) or `pdflatex` (MiKTeX / TeX Live) on PATH.
+**Requires:** `tectonic` (preferred — auto-downloads packages) or `pdflatex` (MiKTeX / TeX Live). `generate-latex.mjs` uses a repo-local tectonic first, then PATH.
+
+**No engine installed?** If the step 13 report carries `installHint`, or its CJK issue says to install tectonic (a pdflatex-only host), ask the user once, in their language (`language.output`), whether to download tectonic now. Whatever the wording, the question must state that it is a one-time download of ~10-22 MB from the official tectonic GitHub release, so the user consents knowing the size and the source. On yes run `node install-latex-engine.mjs`, then re-run step 13. On no, report the `.tex` path and stop; the file still compiles as-is on Overleaf. Never run the installer without asking.
 
 ## Language support
 

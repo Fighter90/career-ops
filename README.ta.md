@@ -20,12 +20,13 @@
   <a href="README.ar.md">العربية</a> |
   <a href="README.hi.md">हिन्दी</a> |
   <a href="README.tr.md">Türkçe</a> |
-  <a href="README.vi.md">Tiếng Việt</a>
+  <a href="README.vi.md">Tiếng Việt</a> |
+  <a href="README.id.md">Bahasa Indonesia</a>
 </p>
 
 <!-- The non-breaking spaces (&nbsp;) and word joiners (&#8288;) below decide where each line wraps on a phone. Keep them when editing. -->
 
-<p align="center"><a href="https://github.com/santifer"><img src="docs/avatar-santifer.png" width="48" height="48" align="middle" alt="Santiago Fernández de Valderrama Aparicio"></a>&nbsp;&nbsp;<a href="https://github.com/santifer"><strong>santifer</strong></a></p>
+<p align="center"><a href="https://github.com/santifer"><img src="docs/avatar-santifer.png" width="48" height="48" align="middle" alt="Santiago Fernández de Valderrama Aparicio"></a>&nbsp;&nbsp;<a href="https://github.com/santifer"><strong>@santifer</strong></a> உருவாக்கியது</p>
 
 <p align="center">
 <strong>மாதக்கணக்கில் CV அனுப்பினேன், பதில் மௌனம்&nbsp;மட்டுமே.</strong><br>
@@ -203,7 +204,7 @@ npx @santifer/career-ops init
 
 > 💡 `npx` [Node.js](https://nodejs.org)-உடன் வருகிறது: எதையும் global-ஆக நிறுவாமல்
 > நிறுவியை ஒரு முறை இயக்குகிறது. Node இன்னும் இல்லையா? முதலில் அதை நிறுவுங்கள்.
-> (ஏற்கனவே Claude Code / Gemini / Codex CLI பயன்படுத்துகிறீர்களா? அப்படியானால் ஏற்கனவே உங்களிடம் உள்ளது.)
+> (ஏற்கனவே Claude Code / Codex CLI பயன்படுத்துகிறீர்களா? அப்படியானால் ஏற்கனவே உங்களிடம் உள்ளது.)
 
 இது சமீபத்திய வெளியீட்டை `./career-ops`-இல் clone செய்து dependencies-ஐ நிறுவுகிறது. பிறகு:
 
@@ -367,7 +368,7 @@ agy
 /career-ops tracker
 ```
 
-இந்த skill திறந்த தரநிலைப்படி `.agents/skills/career-ops/SKILL.md`-இல் வரையறுக்கப்பட்டு, ஆதரிக்கப்படும் ஒவ்வொரு CLI-க்கும் (எ.கா. `.claude/`, `.cursor/`, `.qwen/`, `.antigravitycli/`, `.grok/`) symlink அல்லது குறிப்பு செய்யப்பட்டுள்ளது.
+இந்த skill திறந்த தரநிலைப்படி `.agents/skills/career-ops/SKILL.md`-இல் வரையறுக்கப்பட்டு, ஆதரிக்கப்படும் ஒவ்வொரு CLI-க்கும் (எ.கா. `.claude/`, `.qwen/`, `.antigravitycli/`, `.grok/`) symlink அல்லது குறிப்பு செய்யப்பட்டுள்ளது. Cursor, `.agents/skills/`-இல் உள்ள பகிரப்பட்ட skill-ஐ தானாகக் கண்டறிகிறது.
 
 ## Codex Integration
 

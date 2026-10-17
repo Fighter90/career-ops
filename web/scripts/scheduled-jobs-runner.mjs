@@ -40,7 +40,7 @@ export function enqueueDueJobs(store, nowMs = Date.now()) {
       queued += 1;
     }
 
-    const nextRunAt = nextScheduledRun(dueAt, job.every, job.unit, nowMs, job.timezone || "UTC");
+    const nextRunAt = nextScheduledRun(job.startAt, job.every, job.unit, nowMs, job.timezone || "UTC");
     if (nextRunAt) job.nextRunAt = nextRunAt;
     job.updatedAt = new Date(nowMs).toISOString();
   }

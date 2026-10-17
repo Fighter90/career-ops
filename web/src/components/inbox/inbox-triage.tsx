@@ -13,11 +13,13 @@ import { TriageRow, type RowScore } from "./triage-row";
 import { ShortlistTray, type ShortItem } from "./shortlist-tray";
 import { cn } from "@/lib/cn";
 import { estimateRunCost } from "@/lib/run-cost-estimate.mjs";
+import { createInboxSkipActions, queueInboxSkip } from "@/lib/inbox-skip-client.mjs";
 
 const SHORTLIST_KEY = "career-ops:shortlist";
 const HIDDEN_KEY = "career-ops:hidden";
 const CONFIG_KEY = "career-ops:config";
 const BATCH = 20;
+type UndoNotice = { label: string; fn: () => Promise<void>; busy?: boolean; error?: string };
 
 // The inbox as a TRIAGE surface: Abundance → Triage → Shortlist → Opt-in Score.
 // Default is a small fresh batch (never the full wall); free facets + Save/Skip narrow
@@ -28,6 +30,8 @@ export function InboxTriage({ inbox }: { inbox: InboxJob[] }) {
   const { jobs, startJob } = useJobs();
   // Serialize skip/undo per URL so a fast Undo cannot lose the race to Skip.
   const skipChain = useRef(new Map<string, Promise<void>>());
+  const undoRunning = useRef(new Set<UndoNotice["fn"]>());
+  const restoreRunning = useRef(false);
 
   // facets
   const [within, setWithin] = useState<number | null>(null);
@@ -41,7 +45,9 @@ export function InboxTriage({ inbox }: { inbox: InboxJob[] }) {
   const [shortlist, setShortlist] = useState<ShortItem[]>([]);
   const [hidden, setHidden] = useState<string[]>([]);
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
-  const [undo, setUndo] = useState<{ label: string; fn: () => void } | null>(null);
+  const [undo, setUndo] = useState<UndoNotice | null>(null);
+  const [writeError, setWriteError] = useState("");
+  const [restoring, setRestoring] = useState(false);
   const [hasCli, setHasCli] = useState(false);
   const [loaded, setLoaded] = useState(false);
 
@@ -81,8 +87,8 @@ export function InboxTriage({ inbox }: { inbox: InboxJob[] }) {
   }, [inbox]);
   // auto-dismiss the undo toast
   useEffect(() => {
-    if (!undo) return;
-    const t = setTimeout(() => setUndo(null), 5000);
+    if (!undo || undo.busy || undo.error) return;
+    const t = setTimeout(() => setUndo((current) => current?.fn === undo.fn && !current.busy && !current.error ? null : current), 5000);
     return () => clearTimeout(t);
   }, [undo]);
 
@@ -112,7 +118,7 @@ export function InboxTriage({ inbox }: { inbox: InboxJob[] }) {
     }
     const m = new Map<string, RowScore>();
     for (const [url, j] of best) {
-      m.set(url, { score: j.result?.score ?? null, tone: j.result?.tone ?? "muted", jobId: j.id, running: j.status === "running" });
+      m.set(url, { score: j.result?.score ?? null, tone: j.result?.tone ?? "muted", jobId: j.id, running: j.status === "running", reportN: j.reportN });
     }
     return m;
   }, [jobs]);
@@ -155,23 +161,23 @@ export function InboxTriage({ inbox }: { inbox: InboxJob[] }) {
 
   const isShortlisted = (url: string) => shortlist.some((s) => s.url === url);
 
-  const persistSkip = (url: string, done: boolean) => {
-    const prev = skipChain.current.get(url) ?? Promise.resolve();
-    const next = prev
-      .then(async () => {
-        const res = await fetch("/api/inbox/skip", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ url, done }),
-        });
-        if (!res.ok) throw new Error("skip write failed");
-        router.refresh();
-      })
-      .catch(() => {
-        if (done) setHidden((h) => h.filter((u) => u !== url));
-      });
-    skipChain.current.set(url, next);
-    return next;
+  const persistSkip = async (url: string, done: boolean) => {
+    await queueInboxSkip(skipChain.current, url, done);
+    router.refresh();
+  };
+  const handleUndo = async (notice: UndoNotice) => {
+    if (undoRunning.current.has(notice.fn)) return;
+    undoRunning.current.add(notice.fn);
+    setUndo((current) => current?.fn === notice.fn ? { ...current, busy: true, error: undefined } : current);
+    try {
+      await notice.fn();
+      setUndo((current) => current?.fn === notice.fn ? null : current);
+    } catch (cause) {
+      const error = cause instanceof Error ? cause.message : "Could not undo this skip. Please try again.";
+      setUndo((current) => current?.fn === notice.fn ? { ...current, busy: false, error } : current);
+    } finally {
+      undoRunning.current.delete(notice.fn);
+    }
   };
 
   const save = (job: InboxJob) => {
@@ -179,20 +185,37 @@ export function InboxTriage({ inbox }: { inbox: InboxJob[] }) {
     setShortlist((s) => [...s, { url: job.url, company: job.company, role: job.role }]);
   };
   const skip = (job: InboxJob) => {
+    setWriteError("");
     setHidden((h) => (h.includes(job.url) ? h : [...h, job.url]));
-    setUndo({
-      label: `Skipped ${job.company}`,
-      fn: () => {
-        setHidden((h) => h.filter((u) => u !== job.url));
-        void persistSkip(job.url, false);
-      },
+    const actions = createInboxSkipActions((done) => persistSkip(job.url, done), () => {
+      setHidden((h) => h.filter((u) => u !== job.url));
+      setUndo((current) => current?.fn === notice.fn && !current.busy ? null : current);
+      setWriteError(`Could not skip ${job.company}. Please try Skip again.`);
     });
-    void persistSkip(job.url, true);
+    const notice: UndoNotice = {
+      label: `Skipped ${job.company}`,
+      fn: async () => {
+        await actions.undo();
+        setHidden((h) => h.filter((u) => u !== job.url));
+      },
+    };
+    setUndo(notice);
+    void actions.skip();
   };
-  const restoreHidden = () => {
+  const restoreHidden = async () => {
+    if (restoreRunning.current) return;
+    restoreRunning.current = true;
+    setRestoring(true);
     const urls = hidden;
-    setHidden([]);
-    for (const url of urls) void persistSkip(url, false);
+    setWriteError("");
+    try {
+      await Promise.all(urls.map((url) => persistSkip(url, false).then(() => {
+        setHidden((h) => h.filter((u) => u !== url));
+      }).catch(() => setWriteError("Some jobs could not be restored. Try restore again."))));
+    } finally {
+      restoreRunning.current = false;
+      setRestoring(false);
+    }
   };
   const toggleSelect = (url: string) =>
     setSelected((s) => {
@@ -222,12 +245,11 @@ export function InboxTriage({ inbox }: { inbox: InboxJob[] }) {
     setShortlist([]); // sent — the rows flip to Scoring… → badge via scoreByUrl
   };
 
-  // The parent (PipelineView) renders the rich empty-inbox card; here we always
-  // have ≥1 raw posting.
-  if (inbox.length === 0) return null;
-
   return (
     <div className={cn("mx-auto mt-4 max-w-3xl", shortlist.length > 0 && "pb-28 sm:pb-24")}>
+      {writeError && <p role="alert" className="mb-3 text-sm text-red-600 dark:text-red-400">{writeError}</p>}
+      {/* Keep recovery mounted when the last Skip refreshes to an empty inbox. */}
+      <div hidden={inbox.length === 0}>
       <FacetChips
         within={within}
         setWithin={setWithin}
@@ -253,8 +275,8 @@ export function InboxTriage({ inbox }: { inbox: InboxJob[] }) {
           {capped ? "Fresh — worth a look" : anyFacet ? `${filtered.length} match${filtered.length === 1 ? "" : "es"}` : "All roles"}
         </p>
         {hiddenCount > 0 && (
-          <button type="button" onClick={restoreHidden} className="text-xs text-faint transition-colors hover:text-foreground">
-            {hiddenCount} hidden · restore
+          <button type="button" onClick={() => void restoreHidden()} disabled={restoring} aria-busy={restoring} className="text-xs text-faint transition-colors hover:text-foreground disabled:opacity-50 max-sm:min-h-[44px]">
+            {hiddenCount} hidden · {restoring ? "restoring…" : "restore"}
           </button>
         )}
       </div>
@@ -311,14 +333,18 @@ export function InboxTriage({ inbox }: { inbox: InboxJob[] }) {
       {shortlist.length === 0 && (
         <p className="mt-4 text-center text-xs text-faint">Save roles worth a look, then score them together — one token spend.</p>
       )}
+      </div>
 
       {/* undo toast (sits above the tray) */}
       {undo && (
-        <div className={cn("fixed inset-x-0 z-40 flex justify-center px-4", shortlist.length > 0 ? "bottom-24 sm:bottom-24" : "bottom-6")}>
-          <div className="inline-flex items-center gap-3 rounded-full border border-border bg-surface px-4 py-2 text-sm shadow-lg">
-            <span className="text-muted">{undo.label}</span>
-            <button type="button" onClick={() => { undo.fn(); setUndo(null); }} className="inline-flex items-center gap-1 font-medium text-brand max-sm:min-h-[44px]">
-              <Undo2 className="size-3.5" /> Undo
+        <div className={cn("fixed inset-x-0 z-40 flex justify-center px-4", shortlist.length > 0 ? "bottom-24 sm:bottom-24" : "bottom-20 sm:bottom-6")}>
+          <div className="inline-flex max-w-full flex-wrap items-center gap-3 rounded-2xl border border-border bg-surface px-4 py-2 text-sm shadow-lg">
+            <div className="min-w-0 flex-1 break-words">
+              <span className="text-muted" role="status">{undo.label}</span>
+              {undo.error && <p role="alert" className="text-red-600 dark:text-red-400">{undo.error}</p>}
+            </div>
+            <button type="button" onClick={() => void handleUndo(undo)} disabled={undo.busy} aria-busy={Boolean(undo.busy)} className="inline-flex shrink-0 items-center gap-1 font-medium text-brand disabled:opacity-50 max-sm:min-h-[44px]">
+              <Undo2 className="size-3.5" /> {undo.busy ? "Undoing…" : undo.error ? "Retry undo" : "Undo"}
             </button>
           </div>
         </div>

@@ -20,6 +20,7 @@ import { copyFileSync, mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSy
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { SCRATCH_PREFIX } from '../lib/scratch-dirs.mjs';
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const HEADER = '| # | Date | Company | Role | Score | Status | PDF | Report | Notes | URL |';
@@ -51,8 +52,10 @@ function setStatus(dir, args, { codeRoot = ROOT, env = {} } = {}) {
 function fakeArchiveCodeRoot() {
   // Copy the set-status import closure under the real repo so bare package
   // imports still resolve from ROOT/node_modules, then replace only the
-  // archive executable with a deterministic no-network probe.
-  const codeRoot = mkdtempSync(join(ROOT, '.tmp-set-status-archive-'));
+  // archive executable with a deterministic no-network probe. Under the
+  // scratch prefix, so that nothing walking the repo meanwhile takes these
+  // copies for part of it.
+  const codeRoot = mkdtempSync(join(ROOT, `${SCRATCH_PREFIX}set-status-archive-`));
   for (const sub of ['lib', 'templates']) mkdirSync(join(codeRoot, sub), { recursive: true });
   for (const file of [
     'set-status.mjs', 'path-resolver.mjs', 'tracker-utils.mjs', 'pipeline-lock.mjs',

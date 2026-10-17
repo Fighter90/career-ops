@@ -40,3 +40,24 @@ export async function saveStatus(n, current, next, request = fetch) {
   }
   return result.status;
 }
+
+/** One status for many rows. Saves run one at a time, because each save takes
+ * the tracker lock and parallel saves would only queue on it or time out.
+ * A failed row does not stop the rest.
+ * @param {{n: string, status: string}[]} rows
+ * @param {string} next
+ * @param {typeof fetch} [request]
+ * @returns {Promise<{saved: string[], failed: {n: string, error: string}[]}>}
+ */
+export async function saveStatuses(rows, next, request = fetch) {
+  const saved = [];
+  const failed = [];
+  for (const row of rows) {
+    try {
+      if (await saveStatus(row.n, row.status, next, request)) saved.push(row.n);
+    } catch (e) {
+      failed.push({ n: row.n, error: e instanceof Error ? e.message : String(e) });
+    }
+  }
+  return { saved, failed };
+}

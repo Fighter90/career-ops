@@ -148,6 +148,8 @@ Without that answer, stop immediately and return the following as the final real
 
 ### Step 2 — Evaluate A-G
 
+Before deriving public facts, follow **Local job-facts cache (#1025)** below when a strong identity and current verified liveness are available. A cache miss continues with normal evaluation. All personal fit and judgments are recomputed.
+
 Read `llms.txt`, `modes/_profile.md`, and `config/profile.yml` now — targeting and archetype context, not candidate evidence.
 
 **Do not read `cv.md` or `article-digest.md` yet.** Block B's first pass assigns Importance from the JD alone, and loading candidate evidence here would make that impossible: this step is the one place that ordering can be silently lost. Block B says when to load them; Step 0 and Block A need neither.
@@ -348,8 +350,9 @@ Batch mode limitation: Playwright is not available, so exact apply-button state 
     **Self-check before running the first command (mandatory):** re-read the base64 string you are about to substitute in. If it contains anything outside `A-Z a-z 0-9 + / =`, or any whitespace/newline, the text was not actually encoded — fix the encoding, don't work around it by re-quoting.
 
     `--home-location` stays a plain double-quoted argument — it comes from `config/profile.yml`, a trusted user-layer file, never from the JD. Report the script's own numbers — never hand-compute the arithmetic, never omit `--currency`. `ok: false` → `not evaluated`, say nothing, regardless of reason (`no-jurisdiction-match`: no row for either jurisdiction; `same-jurisdiction`: no actual relocation; `cross-country-not-supported`: out of scope; `currency-mismatch`: the gross figure's currency doesn't match the matched jurisdiction's table currency — never silently taxed under the wrong currency's brackets; or a data-level reason like `no-gross-amount`/`no-table`). `ok: true` → state both sides' modeled take-home side by side, carrying the script's own `limitations` disclaimer (marginal tax brackets only; no basic personal amount, credits, CPP/EI, surtaxes, or cost-of-living modeled) and the not-financial/tax-advice framing. Never a verdict on the offer.
+18. **Recruiter Identity Verification** — only when the role came through recruiter outreach, including outreach that links a public posting (the input or its pipeline notes say so); a posting the candidate found on their own → `not evaluated`, say nothing. Checks (b), (c) and (e) spend no queries; evidence that neither confirms nor contradicts a check is Unknown (Neutral), never Concerning. Same five checks as `modes/oferta.md` Signal 18: (a) the company's own careers page or public ATS board lists the role (one lookup), (b) an unfamiliar name paired with a known brand is checked as its own entity, (c) the recruiter's email domain or an independent source links them to the company, (d) one search for `"{unfamiliar name, or the company}" scam OR "fake recruiter" OR "fake job"`, (e) the outreach asks to clone, install or run supplied code, to screen-share it, to move to Telegram/WhatsApp/Discord, or to pay. **Never clone, install, open, or execute anything the recruiter supplied** — batch workers run with `--dangerously-skip-permissions`, so this is a hard stop, not a judgment call. Recruiter contact alone is Neutral. (a) or (d) Concerning plus one more Concerning check → Suspicious, with the recruiter identity note.
 
-Signals 1-5 and 7-9 set the tier. Signal 6 is `not evaluated` in batch, so it never feeds the tier either — it stays a descriptive, informational finding, as the Risk Summary already reports. Signals 10-16 never change the tier: report each one separately as its own finding, keep every one of them descriptive rather than assertive, and close them as informational, not legal advice. Signal 17 likewise never changes the tier: keep it informational, never treat its modeled purchasing-power comparison as a verdict on the offer, and close it as not financial or tax advice.
+Signals 1-5, 7-9 and 18 set the tier. Signal 6 is `not evaluated` in batch, so it never feeds the tier either — it stays a descriptive, informational finding, as the Risk Summary already reports. Signals 10-16 never change the tier: report each one separately as its own finding, keep every one of them descriptive rather than assertive, and close them as informational, not legal advice. Signal 17 likewise never changes the tier: keep it informational, never treat its modeled purchasing-power comparison as a verdict on the offer, and close it as not financial or tax advice.
 
 Use one tier: **High Confidence**, **Proceed with Caution**, or **Suspicious**. Present observations, not accusations, and explain thin evidence.
 
@@ -447,6 +450,7 @@ Create a machine-readable summary from the completed A-G evaluation and global s
 ```yaml
 company: "{company}"
 role: "{role}"
+job_facts_cache: null # optional metadata; see Local job-facts cache below
 score: {X.X}
 legitimacy_tier: "{High Confidence | Proceed with Caution | Suspicious}"
 archetype: "{detected}"
@@ -503,8 +507,42 @@ Rules:
 - `posting_location` is the JD's **own** stated work location, verbatim (e.g. `"Halifax, NS"`); `null` when the JD states no specific location, or is fully remote with no base jurisdiction named. Feeds the relocation purchasing-power comparison (Block G Signal 17, #4694) — `salary-gap.mjs` reads it the same way it already reads `advertised_comp`. Never infer it from the company's HQ or from company research; only the JD's own words.
 - Do not invent missing data. Derive `confidence` from `score_evidence` using the Score Evidence tier rules above; the report's evidence table and `confidence_gaps` must explain the tier. Do not confuse it with `legitimacy_tier`.
 - `work_auth` reflects the Block A work-authorization tier: `no_sponsorship` only when the JD **explicitly** refuses sponsorship for a role outside the candidate's `authorized_in`; `unstated` when the JD is silent (neutral, not a blocker); `not_needed` when the role is within `authorized_in` or sponsorship isn't required; `sponsors` when the JD explicitly offers it.
-- `requirement_importance` mirrors Block B's table row by row — same rows, same verdicts, snake_cased. `evidence: stated` **requires** a non-null verbatim `jd_signal`; `jd_signal: null` is legal only for `structural` and `inferred`. `importance` is never `critical` or `high` when `evidence: inferred` — that is Block B's gate, machine-checkable here. `match` is `strong | partial | missing | na`, mirroring ✅ / ⚠️ / ❌ / ➖. Use `[]` when the JD yields no usable requirement list. No consumer reads this key yet; it is allowlisted so it round-trips.
+- `requirement_importance` mirrors Block B's table row by row — same rows, same verdicts, snake_cased. `evidence: stated` **requires** a non-null verbatim `jd_signal`; `jd_signal: null` is legal only for `structural` and `inferred`. `importance` is never `critical` or `high` when `evidence: inferred` — that is Block B's gate, machine-checkable here. `match` is `strong | partial | missing | na`, mirroring ✅ / ⚠️ / ❌ / ➖. Use `[]` when the JD yields no usable requirement list. `upskill.mjs` reads it through `skip-blockers.mjs` to rank the requirements behind recent skips.
 - `risk_summary` mirrors the `## Risk Summary` block row by row — same source verdicts, snake_cased: `legitimacy` from the Block G tier (`high_confidence` / `proceed_with_caution` / `suspicious`), `culture` from the Block A Culture screen (`pass` / `caution` / `fail`), `interview_redflags` from the red-flag file's warning level (`none` / `caution` / `warning`), `ai_screening_disclosure` from the Block G AI-screening disclosure signal (`disclosed` when the posting names AI/automated screening, `corroborating_only` when the jurisdiction requires disclosure and the posting is silent, `no_match` when the candidate's jurisdiction has no table row), `fixed_term` from Signal 16 (`detected` / `not_detected`), and `relocation_purchasing_power` from the Block G relocation signal (Signal 17, #4694) — `computed` when `node salary-gap.mjs --relocation` resolved both jurisdictions and returned `ok: true`; `no_jurisdiction_match` ONLY when the script's `reason` is specifically `no-jurisdiction-match` (the posting's or candidate's jurisdiction has no row in `templates/jurisdiction-relocation-tax.yml`); `not_evaluated` for every other `ok: false` reason — `same-jurisdiction`, `cross-country-not-supported`, `currency-mismatch` (the gross figure's currency didn't match the matched jurisdiction's table currency), or a data-level reason like `no-gross-amount`/`no-table` — as well as when the Risk Summary row itself renders `— not evaluated` (or `— no interview sessions yet`). A `same-jurisdiction` or `currency-mismatch` result must never be written as `no_jurisdiction_match`; both jurisdictions resolved fine, the comparison itself just didn't apply. Never invent a value the block does not show.
+
+#### Local job-facts cache (#1025)
+
+`evaluation-cache.mjs` indexes existing reports on each lookup; it creates no cache database, sends nothing, and never reads a CV, profile, tracker or application decision. Its identity is the validated strong record from `listing-fingerprint.mjs` (#1030): the same `schema_version`, `ats_provider`, `board_slug`, `posting_id` vocabulary referenced by application bundles (#1779). No URL-derived or SimHash substitute is permitted. If #1030 is not installed, lookup returns `listing-identity-unavailable` and the evaluation proceeds with a full fresh extraction.
+
+The public v1 payload is `{schema_version: 1, listing_key, captured_at, job_facts: {company, role, advertised_comp, reports_to}}`. This is a **strict allowlist**, including value types:
+
+| Field | Allowed source and type |
+|---|---|
+| `company`, `role` | Nonempty strings from the posting itself; `?` for a confidential employer. No candidate narrative. |
+| `advertised_comp` | The posting's salary exactly as printed, or `null`; no compensation floor, target, negotiated salary or market estimate. |
+| `reports_to` | The JD's stated reporting line exactly as printed, or `null`; never inferred. |
+
+Strings are at most 2,000 characters. Unknown fields are never copied; nested objects are invalid values for these scalar fields. This allowlist is intentionally smaller than the full Machine Summary. **candidate-fit data never enters the reusable job-facts payload.** Scores, archetypes, personal gaps, strengths, visa/location fit, CVs, application decisions, `risk_summary` and `requirement_importance` are excluded entirely. Even requirement selection/order can reflect candidate match. No derived judgment is cached in v1; any future posting-only derived judgment must be explicitly advisory and reaffirmed per evaluation, never a substitute for private fit.
+
+After a full posting-facts extraction with a resolved strong identity, replace `job_facts_cache: null` in the report with the following metadata. The `listing_fingerprint` value is the complete record returned by #1030, **not** a manually constructed key. Without strong identity, leave `null`. Also leave `null` if any of the four fields contains private corrections or an unpublished employer disclosure instead of posting-derived facts: a field allowlist is not a scrubber for arbitrary text. No bulk migration of old reports.
+
+```yaml
+job_facts_cache:
+  schema_version: 1
+  listing_fingerprint: {the complete JSON record returned by listing-fingerprint.mjs}
+  captured_at: "2026-09-30T07:00:00.000Z"
+  invalidated_at: null
+```
+
+`captured_at` is when these four public facts were actually extracted, in UTC ISO format (seconds or milliseconds, ending in `Z`), **not** the employer's posting date, report mtime or last evaluation time. Copying cached facts into a new report preserves the original `captured_at`. A schema bump is required for a breaking field/meaning change; adding a public field requires a privacy review. Application bundles may reference this listing identity and payload without renaming fields; their CV/decision records remain separate.
+
+Before evaluation, after the existing liveness and confirmation gates:
+
+1. Resolve authoritative ATS-native fields and use `computeListingFingerprint({url, strong: {ats_provider, board_slug, posting_id}})` from `listing-fingerprint.mjs` (or its JSON CLI) to save the current fingerprint to a temporary local JSON file. URL parsing alone cannot supply a strong triple; missing data means no reuse.
+2. Save the **current** liveness verdict to a temporary local JSON file: `{ "url": "https://…", "listing_fingerprint": {…}, "result": "active", "checked_at": "…Z" }`. Use the existing Playwright/liveness-API evidence; the cache performs no network requests. Never invent an active verdict from saved JD text or from an old cache hit. The liveness `listing_fingerprint` must be independently resolved from the ATS fields of the posting actually checked and validate to the requested strong key; never copy the requested key onto unrelated check results. Host/path alone cannot distinguish query-identified postings (for example Greenhouse embed URLs). The URL must be the currently checked posting; its canonical host/path must match the current fingerprint's context. A verified alias can have different context from the stored report while sharing the same strong key.
+3. Run `node evaluation-cache.mjs --identity <fingerprint.json> --liveness <liveness.json>`. `--reports <dir>` overrides the default `{DATA_ROOT}/reports`. A hit requires facts **less than 24 hours** old and an active check **less than 5 minutes** old; future/invalid timestamps, absent metadata, partial/malformed identity, a different key, or failed checks are misses. Never refresh `captured_at` on lookup. Reuse only the returned four facts; recompute all candidate fit and all derived judgments. If the current posting visibly changed, extract again even within the TTL.
+4. On confirmed `expired` with an explicit closure code (`http_gone`, `expired_url`, `expired_body`, or `listing_page`), save the current check in `liveness.json` with `"result": "expired"` (rather than the `"active"` value in step 2); preserve its current `url`, `listing_fingerprint`, and `checked_at`, and never use `code: "insufficient_content"` or `code: "expired_body_soft"`. Then run the same command with `--invalidate` **before the existing closed-posting stop**. This stamps `invalidated_at` in every matching report's cache metadata, preserving other report content and file permissions. Deleting or archiving one duplicate cannot remove the remaining copies' closure marker. Its tombstone invalidates every report for that key captured at/before that instant, so older duplicates cannot revive a closed posting. Only a full extraction after invalidation plus an active check taken after that invalidation allows reuse again. `uncertain`, `insufficient_content`, weak body signals, challenge pages or fetch errors give a miss, never a durable closure. Invalidation errors must be resolved before later reuse, not ignored.
+5. A headless worker lacking verified current liveness cannot use the cache. It follows the existing full-evaluation/unconfirmed-verification path. No extra network calls, sharing or background jobs are introduced.
 
 ### Step 3 — Save the Report
 
@@ -544,6 +582,7 @@ Report header:
 ```yaml
 company: "{empresa}"
 role: "{rol}"
+job_facts_cache: null # optional metadata; see Local job-facts cache below
 score: {X.X}
 legitimacy_tier: "{High Confidence | Proceed with Caution | Suspicious}"
 archetype: "{detectado}"
@@ -592,7 +631,7 @@ risk_summary:
 
 Then include:
 
-- `## Job Description (archived verbatim)` — the full JD pasted verbatim. REQUIRED, not optional (AGENTS.md rule #2789): the `**URL:**` header is a live pointer and rots the moment the posting closes, so this section is the only durable record of what was asked. `check-jd-archive.mjs` validates it. Paste `{{JD_FILE}}`'s content unchanged (or, when the JD was fetched instead of prefetched, the fetched text as-is).
+- `## Job Description (archived verbatim)` — the full JD pasted verbatim. REQUIRED, not optional (AGENTS.md rule #2789): the `**URL:**` header is a live pointer and rots the moment the posting closes, so this section is the only durable record of what was asked. `check-jd-archive.mjs` validates it. Paste `{{JD_FILE}}`'s content unchanged (or, when the JD was fetched instead of prefetched, the fetched text as-is). Never paraphrase or restate it under this heading. If you cannot reproduce the text in full, run `node archive-posting.mjs <url> --company={company-slug} --report={{REPORT_NUM}}` (the same slug as in the report filename) and use the pointer sentence from `modes/oferta.md` instead; `check-jd-archive.mjs` does not credit a section that calls itself a paraphrase.
 - `## Machine Summary`
 - `## A) Role Summary`
 - `## B) CV Match`
@@ -605,6 +644,7 @@ Then include:
 - `## Risk Summary`
 - `## Score Evidence`
 - `## Extracted Keywords`
+- `## Keyword Coverage`, the block `node keyword-match.mjs {report-path}` prints, pasted after the keyword list. A report without both sections leaves the coverage check in `modes/pdf.md` Step 22 with nothing to read.
 
 Translate these human-facing headings according to `language.output` when it is not English. Keep `## Machine Summary`, the `## Job Description (archived verbatim)` heading, and the YAML keys exact for downstream parsers: `check-jd-archive.mjs` matches the archive heading by its literal English `## Job Description` prefix, so a translated heading reports a real archive as missing.
 

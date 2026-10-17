@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { careerOpsRoot, pdfPathStatusForReport, readApplications } from "@/lib/career-ops";
+import { careerOpsRoot, findApplication, pdfPathStatusForReport } from "@/lib/career-ops";
 import { companySlug } from "@/lib/company-slug.mjs";
 import { matchesTailoredCv, sortNewestFirst } from "./cv-match.mjs";
 import { reportNumberFromCell } from "./cv-selection.mjs";
@@ -16,7 +16,7 @@ import { reportNumberFromCell } from "./cv-selection.mjs";
 export async function resolveTailoredCv(company?: string, applicationNumber?: string): Promise<string | null> {
   const root = careerOpsRoot();
   if (applicationNumber?.trim()) {
-    const app = readApplications().find((candidate) => candidate.n === applicationNumber.trim());
+    const app = findApplication(applicationNumber.trim());
     const reportNumber = reportNumberFromCell(app?.report);
     if (!reportNumber) return null;
     const result = await pdfPathStatusForReport(String(reportNumber));

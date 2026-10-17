@@ -20,12 +20,13 @@
   <a href="README.ar.md">العربية</a> |
   <a href="README.hi.md">हिन्दी</a> |
   <a href="README.tr.md">Türkçe</a> |
-  <a href="README.vi.md">Tiếng Việt</a>
+  <a href="README.vi.md">Tiếng Việt</a> |
+  <a href="README.id.md">Bahasa Indonesia</a>
 </p>
 
 <!-- The non-breaking spaces (&nbsp;) and word joiners (&#8288;) below decide where each line wraps on a phone. Keep them when editing. -->
 
-<p align="center"><a href="https://github.com/santifer"><img src="docs/avatar-santifer.png" width="48" height="48" align="middle" alt="Santiago Fernández de Valderrama Aparicio"></a>&nbsp;&nbsp;<a href="https://github.com/santifer"><strong>santifer</strong></a></p>
+<p align="center"><a href="https://github.com/santifer"><img src="docs/avatar-santifer.png" width="48" height="48" align="middle" alt="Santiago Fernández de Valderrama Aparicio"></a>&nbsp;&nbsp;만든 사람: <a href="https://github.com/santifer"><strong>@santifer</strong></a></p>
 
 <p align="center">
 <strong>몇 달 동안 이력서를 보내도 답&#8288;이&nbsp;없&#8288;었&#8288;습&#8288;니&#8288;다.</strong><br>
@@ -203,7 +204,7 @@ npx @santifer/career-ops init
 
 > 💡 `npx`는 [Node.js](https://nodejs.org)에 포함되어 있습니다: 전역으로 아무것도 설치하지 않고
 > 설치 프로그램을 한 번 실행합니다. Node가 아직 없나요? 먼저 설치하세요.
-> (이미 Claude Code / Gemini / Codex CLI를 쓰고 있나요? 그러면 이미 있습니다.)
+> (이미 Claude Code / Codex CLI를 쓰고 있나요? 그러면 이미 있습니다.)
 
 이 명령은 최신 릴리스를 `./career-ops`에 클론하고 의존성을 설치합니다. 그다음:
 
@@ -367,7 +368,7 @@ agy
 /career-ops tracker
 ```
 
-스킬은 오픈 표준에 따라 `.agents/skills/career-ops/SKILL.md`에 정의되어 있으며, 지원되는 각 CLI(예: `.claude/`, `.cursor/`, `.qwen/`, `.antigravitycli/`, `.grok/`)에 심볼릭 링크되거나 참조됩니다.
+스킬은 오픈 표준에 따라 `.agents/skills/career-ops/SKILL.md`에 정의되어 있으며, 지원되는 각 CLI(예: `.claude/`, `.qwen/`, `.antigravitycli/`, `.grok/`)에 심볼릭 링크되거나 참조됩니다. Cursor는 `.agents/skills/`의 공유 스킬을 자동으로 발견합니다.
 
 ## Codex 연동
 

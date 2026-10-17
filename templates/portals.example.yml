@@ -59,17 +59,44 @@
 # An employer can publish one requisition in more than one language (for
 # example German and English), with the same title and location in each. By
 # default those are ONE role and the scan keeps whichever version the ATS
-# returned first.
+# returned first — usually the posting's default language; to choose which
+# version that is, see preferred_languages below.
 #
-# Set dedup_include_language: true to keep them apart when the ATS reports each
-# posting's language. Turn it on when you only apply to postings written in some
-# languages and discard the rest (for example, skip every JD written in German):
-# otherwise the version the scan kept may be the one you throw away.
-# Regional variants count as one language (en-GB equals en), and a posting whose
-# language the ATS doesn't report is compared as before.
+# Set dedup_include_language: true when you read several languages and want
+# every version of a posting, each as its own row. Regional variants count as
+# one language (en-GB equals en), and a posting whose language the ATS doesn't
+# report is compared as before.
+#
+# Some ATSes (Personio, Recruitee) serve every language version of a posting
+# under one URL. With the switch off they return each posting in its own
+# default language only (plus the preferred_languages versions, below, of
+# which the scan still keeps one); with it on they return every version —
+# Personio at one extra request per further language (at most 5), Recruitee from the
+# response it already fetches.
 #
 # scan_history:
 #   dedup_include_language: true
+
+# -- Preferred posting languages (optional) --
+# The languages you want a posting in, best first: an order of preference,
+# not a filter. Where a posting has versions in some of them, the scan keeps
+# the one in the language that comes first in this list; otherwise it keeps
+# the default one, as before. It never drops a posting: one with no version
+# in these languages still comes back in its default language. Use it when you
+# apply in some languages and discard the rest (for example, you skip JDs
+# written in German): you get the English version of a posting that has one,
+# and still one row per posting, however many languages you list. With
+# dedup_include_language on as well, every version is kept, in every
+# language, and the preferred ones come first. Regional variants count as one
+# language (en-GB equals en).
+#
+# Personio fetches one more careers page per preferred language some posting
+# has (at most 5); Recruitee needs no extra request. To set the language of one company only, put the
+# ATS's own language param on its careers_url — `?language=xx` on Personio,
+# `?lang=xx` on Recruitee; with dedup_include_language off it overrides this
+# list for that entry, and with it on every version comes back anyway.
+#
+# preferred_languages: [en]
 
 # -- Interamt.de searches (optional, German public sector) --
 # Read by scan-interamt.mjs (`npm run scan:interamt`), a separate Playwright
@@ -1196,6 +1223,7 @@ search_queries:
 #                   recruiting.ultipro.(ca|com) / recruiting2/3.ultipro.com variants, matched by pattern —
 #                   whichever host the tenant's own board URL uses is preserved, not normalized)
 #   adp-workforcenow  workforcenow.adp.com/mascsr/default/mdf/recruitment/recruitment.html?cid=...&ccId=...
+#   zoho-recruit    <tenant>.zohorecruit.com  (any path; the board is always read from /jobs/Careers)
 #
 # When the public careers URL is a branded custom domain (e.g.
 # careers.adyen.com), set `provider: smartrecruiters` explicitly to
@@ -1286,21 +1314,21 @@ search_queries:
 #   careers_url: https://careers.tencent.com/search.html  # any https://careers.tencent.com URL
 #   keywords: ["AI", "大模型"]   # each keyword is a separate server-side query, results deduped;
 #                                # omit keywords to pull the whole board
-#   max_pages: 20          # optional per-keyword page cap (100 posts/page, default 20)
+#   max_pages: 100         # optional per-keyword page cap (100 posts/page, default 100)
 #   enabled: true
 #
 # - name: 美团 (Meituan)
 #   careers_url: https://zhaopin.meituan.com/web/social   # any https://zhaopin.meituan.com URL
 #   keywords: ["AI", "大模型"]   # each keyword is a separate server-side query, results deduped;
 #                                # omit keywords to pull the whole board
-#   max_pages: 30          # optional per-keyword page cap (100 posts/page, default 30)
+#   max_pages: 100         # optional per-keyword page cap (100 posts/page, default 100)
 #   enabled: true
 #
 # - name: 阿里巴巴 (Alibaba)
 #   careers_url: https://talent.alibaba.com/off-campus/position-list   # any https://talent.alibaba.com URL
 #   keywords: ["AI", "大模型"]   # each keyword is a separate server-side query, results deduped;
 #                                # omit keywords to pull the whole board
-#   max_pages: 50          # optional per-keyword page cap (100 posts/page, default 50)
+#   max_pages: 100         # optional per-keyword page cap (100 posts/page, default 100)
 #   enabled: true
 #
 # - name: Example Feishu Jobs Co
@@ -1325,6 +1353,13 @@ search_queries:
 #   adpWorkforcenow:
 #     fetchDetails: true    # optional: fetch each posting's detail JSON for a description (off by default — the list payload carries no JD text)
 #     detailLimit: 25       # optional: max detail calls per sweep when fetchDetails is true
+#   enabled: true
+#
+# - name: Example Zoho Recruit Co
+#   careers_url: https://exampleco.zohorecruit.com/jobs/Careers   # any <tenant>.zohorecruit.com URL
+#   zohoRecruit:
+#     fetchDetails: false   # optional: fetch each posting's page for its full description, date and salary (one extra request per posting)
+#     detailLimit: 25       # optional: max detail fetches per sweep when fetchDetails is true (max 100)
 #   enabled: true
 
 #
@@ -1691,6 +1726,20 @@ search_queries:
 #   # precision, same recall-first approach VDAB/Job Bank Canada use.
 #   enabled: true
 #
+# - name: Platsbanken — Software         # Sweden's national job board (Arbetsförmedlingen)
+#   provider: platsbanken
+#   platsbanken:
+#     # keywords optional: falls back to config/profile.yml's target_roles
+#     # (primary[] + archetypes[].name) when omitted.
+#     keywords: ["software engineer", "systemutvecklare"]  # explicit override
+#   max_pages: 5          # optional page cap (100 ads/page, default 5, max 21)
+#   # Keywords scope the source rather than decorate it: the JobTech Dev API
+#   # stops serving at offset 2000, so the unfiltered board (39,433 ads,
+#   # measured 2026-10-12) cannot be walked past 2,100 rows — each keyword gets
+#   # its own window. No location option either — use location_filter (above)
+#   # for precision, same recall-first approach VDAB/Job Bank Canada use.
+#   enabled: true
+#
 # - name: Glints — Indonesia             # SE-Asia aggregator (SG/ID/MY/VN)
 #   provider: glints
 #   searchKeywords: "AI Engineer"
@@ -1711,6 +1760,17 @@ search_queries:
 #   searchKeywords: "strategy consultant"
 #   searchLocation: "Melbourne VIC"
 #   appendWorkType: true  # optional: title becomes "Strategy Consultant [Part time]"
+#   enabled: true
+#
+# - name: Kalibrr — Indonesia            # SEA job board (Indonesia-heavy)
+#   provider: kalibrr
+#   searchKeywords: ""    # optional — the API's own `text` filter (whole board when empty)
+#   max_pages: 20         # optional page cap (100 rows/request, default 20, max 200)
+#   enabled: true
+#
+# - name: Tech in Asia                   # SEA startup-ecosystem board
+#   provider: techinasia
+#   max_pages: 5          # optional page cap (1000 rows/request, default 5, max 50)
 #   enabled: true
 #
 # - name: IBM — Germany SWE              # IBM global careers
@@ -1879,11 +1939,30 @@ search_queries:
 # Integrated website → Careers API.
 #
 # Personio (common across DACH/EU) auto-detects from its careers host and
-# pulls the public no-auth XML feed at <slug>.jobs.personio.de/xml — e.g.:
+# reads the public no-auth careers page (XML feed at /xml as the fallback).
+# Postings come back in their own default language; to get them in another
+# language wherever a posting has one, set the top-level preferred_languages
+# (see "Preferred posting languages" above) rather than a per-entry param:
 #
 #   - name: Example GmbH
-#     careers_url: https://example-gmbh.jobs.personio.de
+#     careers_url: https://example-gmbh.jobs.personio.de/
 #     enabled: true
+#
+# A ?language=<code> on one careers_url overrides preferred_languages for that
+# entry only (with dedup_include_language off).
+#
+# Recruitee auto-detects from a <slug>.recruitee.com careers host and reads the
+# public no-auth offers API. Offers come back in their own default language;
+# to get them in another language wherever an offer has one, set the top-level
+# preferred_languages (see "Preferred posting languages" above) rather than a
+# per-entry param:
+#
+#   - name: Example Recruitee Co
+#     careers_url: https://exampleco.recruitee.com
+#     enabled: true
+#
+# A ?lang=<code> on one careers_url overrides preferred_languages for that
+# entry only (with dedup_include_language off).
 #
 # Teamtailor auto-detects from a <slug>.teamtailor.com careers host and reads
 # the public no-auth /jobs.rss feed — e.g.:
@@ -2071,8 +2150,7 @@ tracked_companies:
     enabled: true
 
   - name: Temporal
-    careers_url: https://job-boards.greenhouse.io/temporal
-    api: https://boards-api.greenhouse.io/v1/boards/temporal/jobs
+    careers_url: https://jobs.ashbyhq.com/temporal
     notes: "Workflow orchestration."
     enabled: true
 
@@ -2083,8 +2161,7 @@ tracked_companies:
     enabled: true
 
   - name: RunPod
-    careers_url: https://job-boards.greenhouse.io/runpod
-    api: https://boards-api.greenhouse.io/v1/boards/runpod/jobs
+    careers_url: https://jobs.ashbyhq.com/runpod
     notes: "GPU cloud for AI."
     enabled: true
 
@@ -2107,7 +2184,7 @@ tracked_companies:
     scan_method: websearch
     scan_query: '"ada.cx" OR "ada" "AI" "Solutions" OR "Engineer" site:jobs.ashbyhq.com OR site:job-boards.greenhouse.io'
     notes: "Toronto + remote. AI customer service."
-    enabled: true
+    enabled: false
 
   - name: LivePerson
     careers_url: https://liveperson.com/company/careers
@@ -2188,7 +2265,7 @@ tracked_companies:
     scan_method: websearch
     scan_query: '"lindy.ai" "AI" "Forward Deployed" OR "Solutions" site:jobs.ashbyhq.com'
     notes: "AI agent management platform."
-    enabled: true
+    enabled: false
 
   - name: Cognigy
     careers_url: https://careers.cognigy.com
@@ -2294,7 +2371,7 @@ tracked_companies:
   - name: Sanctuary AI
     careers_url: https://jobs.lever.co/sanctuary
     notes: "Vancouver. Humanoid robotics and embodied AI."
-    enabled: true
+    enabled: false
 
   - name: Semios
     careers_url: https://apply.workable.com/semios/
@@ -2325,9 +2402,7 @@ tracked_companies:
     enabled: true
 
   - name: Tinybird
-    careers_url: https://jobs.ashbyhq.com/tinybird
-    scan_method: websearch
-    scan_query: 'site:tinybird.co/careers OR site:jobs.ashbyhq.com/tinybird'
+    careers_url: https://jobs.lever.co/tinybird
     notes: "Remote. Real-time data platform."
     enabled: true
 
@@ -2336,13 +2411,23 @@ tracked_companies:
     scan_method: websearch
     scan_query: 'site:clarity.ai/careers OR site:jobs.lever.co/clarity-ai'
     notes: "Madrid/Remote. Sustainability analytics with AI."
-    enabled: true
+    enabled: false
 
   - name: Travelperk
     careers_url: https://jobs.ashbyhq.com/perk
     scan_method: websearch
     scan_query: 'site:jobs.ashbyhq.com/perk'
     notes: "Barcelona. Business travel unicorn (rebranded Perk)."
+    enabled: true
+
+  - name: Channable
+    careers_url: https://channable.recruitee.com
+    notes: "Utrecht. Product feed management for e-commerce."
+    enabled: true
+
+  - name: Shiji Group
+    careers_url: https://shijigroup.zohorecruit.com/jobs/Careers
+    notes: "Katowice / Barcelona. International hubs of a Beijing-based hospitality technology group."
     enabled: true
 
   # -- DACH & European AI ecosystem --
@@ -2368,8 +2453,7 @@ tracked_companies:
     enabled: true
 
   - name: Black Forest Labs
-    careers_url: https://job-boards.greenhouse.io/blackforestlabs
-    api: https://boards-api.greenhouse.io/v1/boards/blackforestlabs/jobs
+    careers_url: https://jobs.ashbyhq.com/black-forest-labs
     notes: "Freiburg DE / SF. FLUX image models, ex-Stable Diffusion team."
     enabled: true
 
@@ -2501,8 +2585,7 @@ tracked_companies:
   # -- UK & Ireland AI (EU-friendly hiring) --
 
   - name: Wayve
-    careers_url: https://job-boards.greenhouse.io/wayve
-    api: https://boards-api.greenhouse.io/v1/boards/wayve/jobs
+    careers_url: https://jobs.ashbyhq.com/wayve
     notes: "London UK. Embodied AI for self-driving, ML & robotics roles."
     enabled: true
 
@@ -2688,7 +2771,7 @@ tracked_companies:
     careers_url: https://job-boards.greenhouse.io/templafy
     api: https://boards-api.greenhouse.io/v1/boards/templafy/jobs
     notes: "Copenhagen DK. Document-generation / content-enablement platform."
-    enabled: true
+    enabled: false
 
   # -- Iberia AI --
 
@@ -2718,13 +2801,13 @@ tracked_companies:
     careers_url: https://job-boards.greenhouse.io/runwayml
     api: https://boards-api.greenhouse.io/v1/boards/runwayml/jobs
     notes: "Generative AI video and creative tooling platform."
-    enabled: true
+    enabled: false
 
   - name: Hightouch
     careers_url: https://job-boards.greenhouse.io/hightouch
     api: https://boards-api.greenhouse.io/v1/boards/hightouch/jobs
     notes: "Data activation platform with AI agents and solutions engineering roles."
-    enabled: true
+    enabled: false
 
   - name: WorkOS
     careers_url: https://jobs.ashbyhq.com/workos
@@ -2945,6 +3028,132 @@ tracked_companies:
     notes: "African-founded talent marketplace. Verified 2026-08-17: 19 postings, but mostly North America and the UK with a single Kenya role — enable it for the company, not for African coverage."
     enabled: false
 
+  # -- Latin America (employers on already-supported ATS) --
+  #
+  # The scanner reads LatAm job boards (Get on Board, OCC, Gupy, HiringRoom),
+  # but no LatAm employer was tracked here. These companies publish through
+  # Greenhouse, Lever, Ashby and Workable, whose public zero-auth APIs the
+  # scanner already reads. The note on each says where it actually hires, so a
+  # candidate in Colombia doesn't enable a board that only posts in Brazil.
+  # Left `enabled: false` like every other example.
+
+  - name: Nubank
+    careers_url: https://jobs.ashbyhq.com/nubank
+    notes: "Brazil / Mexico / Colombia. Digital bank."
+    enabled: false
+
+  - name: Clara
+    careers_url: https://job-boards.greenhouse.io/clara
+    notes: "Brazil / Mexico / Colombia. Corporate cards and spend management."
+    enabled: false
+
+  - name: dLocal
+    careers_url: https://jobs.lever.co/dlocal
+    notes: "Uruguay / Brazil / Argentina. Cross-border payments."
+    enabled: false
+
+  - name: EBANX
+    careers_url: https://job-boards.greenhouse.io/ebanx
+    notes: "Brazil, some Argentina and UK. Payments."
+    enabled: false
+
+  - name: Yuno
+    careers_url: https://jobs.lever.co/yuno
+    notes: "Remote LatAm (Colombia, Mexico, Brazil, Argentina, Chile) + UK. Payments orchestration."
+    enabled: false
+
+  - name: Addi
+    careers_url: https://jobs.ashbyhq.com/addi
+    notes: "Colombia. Buy-now-pay-later."
+    enabled: false
+
+  - name: Platzi
+    careers_url: https://apply.workable.com/platzi
+    notes: "Mexico / Colombia. Online tech education."
+    enabled: false
+
+  - name: Deuna
+    careers_url: https://jobs.lever.co/deuna
+    notes: "Mexico / US / Colombia, mostly remote. Payments."
+    enabled: false
+
+  - name: Cobre
+    careers_url: https://job-boards.greenhouse.io/cobre
+    notes: "Colombia / Mexico. B2B payments."
+    enabled: false
+
+  - name: Simetrik
+    careers_url: https://jobs.ashbyhq.com/simetrik
+    notes: "Remote LatAm + US. Financial reconciliation."
+    enabled: false
+
+  # -- Cybersecurity (vendors, offensive security, bug bounty) --
+  #
+  # No security employer was tracked here, though a SOC analyst, pentester or
+  # AppSec engineer reads the same Greenhouse / Lever / Ashby boards as
+  # everyone else. Most of these hire in the US and UK only; the note on each
+  # says where it actually hires. Left `enabled: false`.
+
+  - name: Huntress
+    careers_url: https://job-boards.greenhouse.io/huntress
+    notes: "US / UK. Managed EDR and SOC for SMBs."
+    enabled: false
+
+  - name: Sophos
+    careers_url: https://jobs.lever.co/sophos
+    notes: "Remote; UK / US, some Brazil. Endpoint and MDR vendor."
+    enabled: false
+
+  - name: Wiz
+    careers_url: https://job-boards.greenhouse.io/wizinc
+    notes: "US / UK / Brazil / Mexico. Cloud security."
+    enabled: false
+
+  - name: Abnormal Security
+    careers_url: https://job-boards.greenhouse.io/abnormalsecurity
+    notes: "US / UK. Email security."
+    enabled: false
+
+  - name: 1Password
+    careers_url: https://jobs.ashbyhq.com/1password
+    notes: "Remote US / UK. Identity and password management."
+    enabled: false
+
+  - name: Chainguard
+    careers_url: https://job-boards.greenhouse.io/chainguard
+    notes: "Remote US / UK. Software supply-chain security."
+    enabled: false
+
+  - name: Semgrep
+    careers_url: https://jobs.ashbyhq.com/semgrep
+    notes: "Remote US. Static analysis / AppSec."
+    enabled: false
+
+  - name: Bishop Fox
+    careers_url: https://job-boards.greenhouse.io/bishopfox
+    notes: "Remote US + Mexico. Offensive security consultancy."
+    enabled: false
+
+  - name: Praetorian
+    careers_url: https://job-boards.greenhouse.io/praetorian
+    notes: "Remote US. Offensive security consultancy."
+    enabled: false
+
+  - name: Coalfire
+    careers_url: https://jobs.lever.co/coalfire
+    notes: "Remote US. Pentest and compliance (FedRAMP, PCI)."
+    enabled: false
+
+  - name: Bugcrowd
+    careers_url: https://job-boards.greenhouse.io/bugcrowd
+    notes: "Remote US / UK / Brazil. Bug bounty platform."
+    enabled: false
+
+  - name: HackerOne
+    careers_url: https://jobs.ashbyhq.com/hackerone
+    notes: "Remote US. Bug bounty platform."
+    enabled: false
+
   # -- US K-12 school districts & community colleges (single-employer boards) --
   # Examples of the applitrack / neogov / redrover / schoolspring providers.
   # Disabled: these are one region's boards — copy the pattern for your own
@@ -3092,7 +3301,7 @@ job_boards:
     enabled: false
     notes: "Polish tech job board — newest public postings"
 
-  # -- Indonesia job boards (provider: jobstreet / glints) --
+  # -- Indonesia job boards (provider: jobstreet / glints / kalibrr / techinasia) --
 
   - name: Jobstreet Indonesia
     provider: jobstreet
@@ -3104,6 +3313,21 @@ job_boards:
     maxPages: 3
     enabled: false
     notes: "Indonesia's largest job board (SEEK group). Uses SEEK v5 JobSearch API — zero tokens."
+
+  - name: Kalibrr Indonesia
+    provider: kalibrr
+    api: https://www.kalibrr.com/kjs/job_board/search
+    searchKeywords: "engineer"        # optional: maps to the API's own `text` filter
+    pageSize: 100                     # optional (default 100; 500 is accepted)
+    max_pages: 20                     # optional (default 20); `count` in the response bounds the real total
+    enabled: false
+    notes: "SEA job board, Indonesia-heavy. Public no-auth job-board search JSON — zero tokens."
+
+  - name: Tech in Asia
+    provider: techinasia
+    max_pages: 5                      # optional (default 5; 1000 rows per page)
+    enabled: false
+    notes: "SEA startup-ecosystem job board (~300 live postings, mostly Indonesia). Reads the Algolia index the site's own UI queries; the app id + client key are discovered from the live bundle on every run, so nothing is hardcoded."
 
   - name: Glints Indonesia
     provider: glints

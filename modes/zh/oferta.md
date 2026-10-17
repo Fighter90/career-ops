@@ -288,7 +288,7 @@
 ```
 
 ### 2. 登记到 Tracker 记录簿
-在 `data/applications.md` 的末尾追加此条记录：
+将此条记录登记到 tracker：写入 TSV 文件（`_shared.md` 的规则 9），再用 `node merge-tracker.mjs` 合并；严禁直接在 `data/applications.md` 中手动添加行。字段：
 - 顺序 ID 编号
 - 日期
 - 公司名称

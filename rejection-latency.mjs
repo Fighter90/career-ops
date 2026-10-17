@@ -50,7 +50,7 @@ import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import * as yaml from 'js-yaml';
 
-import { parseActiveInterviews } from './process-quality.mjs';
+import { parseActiveInterviews, findColumn } from './process-quality.mjs';
 import { resolveColumns, parseTrackerRow, normalizeTextKey } from './tracker-parse.mjs';
 import { isPlaceholderCompany } from './lib/placeholder-cell.mjs';
 import { roleFuzzyMatch } from './role-matcher.mjs';
@@ -206,13 +206,6 @@ export function groupIdentity(company, via) {
   if (!channel || isPlaceholderCompany(channel)) return null;
   const label = `? (via ${channel})`;
   return { key: `?via:${companyKey(channel)}`, label };
-}
-
-// Case-insensitive column lookup for candidate-edited markdown headers
-// ("Notes" vs "notes" vs " Notes ") — same convention as process-quality.mjs.
-function findColumn(row, name) {
-  const key = Object.keys(row || {}).find(k => k.trim().toLowerCase() === name);
-  return key ? String(row[key] ?? '') : '';
 }
 
 // --- Profile / jurisdiction resolution ---

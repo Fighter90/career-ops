@@ -28,14 +28,18 @@ const REPO_ROOT = path.join(WEB, "..");
 // Node reads as a URL scheme ("d:") and refuses. See the file:// URL test below.
 const LOADER = pathToFileURL(path.join(HERE, "..", "helpers", "web-ts-alias-loader.mjs")).href;
 
+const stripAnsi = (str) => (str || "").replace(/\x1B\[[0-9;]*[a-zA-Z]/g, "");
+
 /** Run one ESM snippet in a fresh Node process. Never throws; reports the failure. */
 function run(src, flags = [], cwd = WEB) {
+  const childEnv = { ...process.env, NODE_DISABLE_COLORS: "1", NO_COLOR: "1" };
+  delete childEnv.FORCE_COLOR;
   try {
-    return { ok: true, out: execFileSync(process.execPath, [...flags, "--input-type=module", "-e", src], {
-      cwd, encoding: "utf-8", timeout: 60000, stdio: ["ignore", "pipe", "pipe"],
-    }).trim() };
+    return { ok: true, out: stripAnsi(execFileSync(process.execPath, [...flags, "--input-type=module", "-e", src], {
+      cwd, encoding: "utf-8", timeout: 60000, stdio: ["ignore", "pipe", "pipe"], env: childEnv,
+    })).trim() };
   } catch (e) {
-    return { ok: false, out: (e.stdout || "").toString().trim(), err: (e.stderr || "").toString() };
+    return { ok: false, out: stripAnsi((e.stdout || "").toString()).trim(), err: (e.stderr || "").toString() };
   }
 }
 

@@ -116,8 +116,12 @@ export function readLockStatus(resourcePath, options = {}) {
   try {
     const stale = Date.now() - fs.statSync(lockDir).mtimeMs > Math.max(staleMs, OWNERLESS_GRACE_MS);
     return { exists: true, active: false, stale, owner: null };
-  } catch {
-    return { exists: true, active: false, stale: true, owner: null };
+  } catch (error) {
+    // Only an old directory is stale. ENOENT means it vanished after the check
+    // above. Any other code means we could not look. Neither proves the lock
+    // was abandoned. A caller acting on "stale" moves whatever sits at the path
+    // by then, which can be a lock another process just created.
+    return { exists: error?.code !== "ENOENT", active: false, stale: false, owner: null };
   }
 }
 

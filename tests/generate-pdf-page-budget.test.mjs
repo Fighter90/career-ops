@@ -14,9 +14,11 @@ import {
 import { isAbsolute, join, relative } from 'path';
 import { tmpdir } from 'os';
 import { fileURLToPath, pathToFileURL } from 'url';
-import { pass, fail, linkRepoPackage, ROOT, NODE } from './helpers.mjs';
+import { pass, fail, linkRepoPackage, ownRootEnv, ROOT, NODE, SANDBOX_DATA_ROOT } from './helpers.mjs';
 
-const outputRoot = join(ROOT, 'output');
+// Under the suite's own data root, not the checkout's output/: that directory
+// is the developer's, and an interrupted run left this fixture in it (#5113).
+const outputRoot = join(SANDBOX_DATA_ROOT, 'output');
 mkdirSync(outputRoot, { recursive: true });
 // realpathSync, not the raw mkdtemp path: Node resolves both `import.meta.url`
 // and a module's node_modules walk from a file's REALPATH, while
@@ -165,7 +167,7 @@ copyFileSync(input, externalInput);
 function runPdf(args, env = {}) {
   const result = spawnSync(NODE, [script, ...args], {
     cwd: sandbox,
-    env: { ...process.env, ...env },
+    env: ownRootEnv(env),
     encoding: 'utf-8',
     timeout: 30_000,
   });

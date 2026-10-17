@@ -15,7 +15,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { isSubmitControl, snapshotLabel, SUBMIT_RX, IN_FORM_RX, CJK_SUBMIT_RX } from "../../src/lib/apply/submit-guard.mjs";
 
-/** The facts drive.ts reads, with the defaults of an ordinary in-form control. */
+/** The facts the drive loop reads, with the defaults of an ordinary in-form control. */
 const el = (facts) => ({ tag: "button", type: "button", inForm: true, ...facts });
 
 test("isSubmitControl: an input that submits by type is refused", () => {
@@ -449,7 +449,7 @@ test("isSubmitControl: an icon named only by its alt is refused", () => {
 
 test("isSubmitControl: a name that exists only through aria-labelledby is refused", () => {
   // Given a button labelled by another element's text (`aria-labelledby="t9"`).
-  // drive.ts resolves that into `aria` in the page, because reading the
+  // factsOf resolves that into `aria` in the page, because reading the
   // aria-label attribute alone would leave the guard classifying an empty string
   const facts = { tag: "div", role: "button", inForm: true, text: "", aria: "Submit application" };
 

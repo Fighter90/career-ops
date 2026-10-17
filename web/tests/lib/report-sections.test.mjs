@@ -16,6 +16,7 @@ import {
   isLeadSection,
   isVerdictHeading,
   splitSections,
+  sectionPreview,
   verdictReason,
 } from "../../src/lib/report-sections.mjs";
 
@@ -217,6 +218,17 @@ test("verdictReason reads the header lede above ---", () => {
   );
 });
 
+test("verdictReason drops inline Markdown markers", () => {
+  assert.equal(
+    verdictReason({
+      verdictContent: "**Apply.** The title and `dbt` match; see [the posting](https://example.com/jobs/1) and *one* gap.",
+    }),
+    "Apply. The title and dbt match; see the posting and one gap.",
+  );
+  assert.equal(verdictReason({ verdictContent: "Skip. Pay is 2 * 40k under the floor." }), "Skip. Pay is 2 * 40k under the floor.");
+  assert.equal(verdictReason({ verdictContent: "Use snake_case_names in the dbt models." }), "Use snake_case_names in the dbt models.");
+});
+
 test("applyLineLabel: 4.0 is the apply line", () => {
   assert.equal(APPLY_LINE, 4.0);
   assert.equal(applyLineLabel(4.0), "Recommended");
@@ -225,9 +237,27 @@ test("applyLineLabel: 4.0 is the apply line", () => {
   assert.equal(applyLineLabel(null), null);
 });
 
+test("applyLineLabel: a flagged posting above the line is not Recommended", () => {
+  assert.equal(applyLineLabel("4.9/5", "Proceed with Caution"), "Check the posting first");
+  assert.equal(applyLineLabel("4.9/5", "Suspicious"), "Check the posting first");
+  assert.equal(applyLineLabel("4.9/5", "High Confidence"), "Recommended");
+  assert.equal(applyLineLabel("3.1/5", "Proceed with Caution"), "Below the apply line");
+});
+
 test("applyCtaQuiet: below the apply line or caution legitimacy", () => {
   assert.equal(applyCtaQuiet({ score: 4.2 }), false);
   assert.equal(applyCtaQuiet({ score: 3.3 }), true);
   assert.equal(applyCtaQuiet({ score: 4.5, legitimacy: "Proceed with Caution" }), true);
   assert.equal(applyCtaQuiet({ score: 4.5, legitimacy: "Legitimate" }), false);
+});
+
+test("sectionPreview summarizes a field table without markdown residue", () => {
+  const md = "| Field | Value |\n|---|---|\n| **Remote** | Seattle, WA |\n| **Comp** | $238k-$278k |\n| **TL;DR** | Fictional role at Monarch AI |";
+  assert.equal(sectionPreview(md), "Remote: Seattle, WA · Comp: $238k-$278k · TL;DR: Fictional role at Monarch AI");
+});
+
+test("sectionPreview prefers prose next to a table and counts a wide table", () => {
+  assert.equal(sectionPreview("| A | B |\n|---|---|\n| x | y |\n\nStrong fit overall. More detail."), "Strong fit overall.");
+  assert.equal(sectionPreview("| Gap | Severity | Mitigation |\n|---|---|---|\n| SQL | Low | Course |\n| K8s | Mid | Lab |"), "2 rows");
+  assert.equal(sectionPreview("| # | Situation | S | T | A | R | STAR story |\n|---|---|---|---|---|---|---|\n| 1 | a | b | c | d | e | f |"), "1 interview story");
 });

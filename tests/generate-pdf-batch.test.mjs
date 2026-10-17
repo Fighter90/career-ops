@@ -25,9 +25,11 @@ import {
 } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
-import { pass, fail, linkRepoPackage, ROOT, NODE } from './helpers.mjs';
+import { pass, fail, linkRepoPackage, ownRootEnv, ROOT, NODE, SANDBOX_DATA_ROOT } from './helpers.mjs';
 
-const outputRoot = join(ROOT, 'output');
+// Under the suite's own data root, not the checkout's output/: that directory
+// is the developer's, and an interrupted run left this fixture in it (#5113).
+const outputRoot = join(SANDBOX_DATA_ROOT, 'output');
 mkdirSync(outputRoot, { recursive: true });
 // realpathSync, not the raw mkdtemp path: Node resolves both `import.meta.url`
 // and a module's node_modules walk from a file's REALPATH, while
@@ -165,7 +167,7 @@ function run(args, { env, cwd } = {}) {
     cwd: cwd || sandbox,
     encoding: 'utf-8',
     timeout: 30_000,
-    env: env ? { ...process.env, ...env } : process.env,
+    env: ownRootEnv(env),
   });
   return { ...result, output: `${result.stdout || ''}${result.stderr || ''}` };
 }
@@ -289,7 +291,7 @@ await renderHtmlToPdf(${JSON.stringify(htmlDoc('Solo CV'))}, outputPath, {
     const result = spawnSync(NODE, [directRunner, join(sandbox, 'out', outputName), sandbox,
       ...(tokens === undefined ? [] : [JSON.stringify(tokens)])], {
       cwd: otherCwd, encoding: 'utf-8', timeout: 30_000,
-      env: { ...process.env, ...themedEnv },
+      env: ownRootEnv(themedEnv),
     });
     if (result.status === 0 && accepts(renderedHtml(outputName))) {
       pass(`imported PDF rendering honors ${label} theme selection from a different working directory`);

@@ -59,10 +59,12 @@ import { fileURLToPath } from 'url';
 import * as yaml from 'js-yaml';
 
 import { resolveColumns, parseTrackerRow } from './tracker-parse.mjs';
+import { findColumn } from './process-quality.mjs';
 import { roleFuzzyMatch } from './role-matcher.mjs';
 import { normalizeCompanyName, companySimilarity } from './invite-match.mjs';
 import { isMainModule } from './lib/is-main-module.mjs';
 import { getCareerOpsRoot, resolveTrackerPath } from './path-resolver.mjs';
+import { loadCanonicalStates, resolveCanonicalStateId, foldStatusInput } from './tracker-utils.mjs';
 
 const CAREER_OPS = dirname(fileURLToPath(import.meta.url));
 const DATA_ROOT = getCareerOpsRoot();
@@ -128,33 +130,21 @@ export function loadLifecycle(statesPath) {
 
 const { order: LIFECYCLE_ORDER, terminal: TERMINAL_STATUSES, labels: CANONICAL_LABELS } = loadLifecycle(STATES_FILE);
 
-// Mirrors the ALIASES map in analyze-patterns.mjs / verify-pipeline.mjs —
 // applications.md status cell normalization (bold markers, trailing dates,
-// Spanish aliases from the shipped default modes).
-const STATUS_ALIASES = {
-  'evaluada': 'evaluated', 'condicional': 'evaluated', 'hold': 'evaluated',
-  'evaluar': 'evaluated', 'verificar': 'evaluated',
-  'aplicado': 'applied', 'enviada': 'applied', 'aplicada': 'applied',
-  'applied': 'applied', 'sent': 'applied',
-  'respondido': 'responded',
-  'screening': 'assessment', 'online assessment': 'assessment', 'online_assessment': 'assessment', 'online screening': 'assessment',
-  'entrevista': 'interview',
-  'oferta': 'offer',
-  'rechazado': 'rejected', 'rechazada': 'rejected',
-  'descartado': 'discarded', 'descartada': 'discarded',
-  'cerrada': 'discarded', 'cancelada': 'discarded',
-  'no aplicar': 'skip', 'no_aplicar': 'skip', 'monitor': 'skip', 'geo blocker': 'skip',
-};
+// localized aliases). Every alias comes from templates/states.yml through the
+// shared resolver — no table here to drift from it.
+const CANONICAL_STATES = loadCanonicalStates(STATES_FILE);
 
 /**
  * Normalize an applications.md status cell to one of the canonical ids.
+ * An unrecognized status keeps its own folded text, which compareLifecycle()
+ * then reports as ambiguous (Tier 2) rather than guessing a stage.
  * @param {string} raw
  * @returns {string}
  */
 export function normalizeStatus(raw) {
-  const clean = String(raw ?? '').replace(/\*\*/g, '').trim().toLowerCase()
-    .replace(/\s+\d{4}-\d{2}-\d{2}.*$/, '').trim();
-  return STATUS_ALIASES[clean] || clean;
+  return resolveCanonicalStateId(raw, CANONICAL_STATES)
+    ?? foldStatusInput(String(raw ?? '').replace(/\s+\d{4}-\d{2}-\d{2}.*$/, ''));
 }
 
 // active-interviews.md's Status column tracks a per-round state (Scheduled,
@@ -303,13 +293,6 @@ export function parseActiveInterviewsWithLines(content) {
 function loadActiveInterviewsWithLines(interviewsFile) {
   if (!existsSync(interviewsFile)) return [];
   return parseActiveInterviewsWithLines(readFileSync(interviewsFile, 'utf-8'));
-}
-
-// Case-insensitive column lookup — same rationale as process-quality.mjs's
-// findColumn: header wording ("Notes" vs "notes") is candidate-editable.
-function findColumn(row, name) {
-  const key = Object.keys(row || {}).find(k => k.trim().toLowerCase() === name);
-  return key ? String(row[key] ?? '') : '';
 }
 
 // --- git blame timestamp (Tier 2 tiebreak) ---

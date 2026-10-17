@@ -409,6 +409,68 @@ test("concurrent real contenders never overlap while taking over or releasing a 
   }
 });
 
+// The interleaving behind the race test's intermittent ENOENT, replayed in one
+// process. Our guard mkdir gets EEXIST. The holder then releases before we read
+// its owner.json, and our stat of the guard fails. Before we act on that, a
+// second contender wins the mkdir and starts writing its owner.json. A stat we
+// could not complete proves nothing about staleness, so we must wait and leave
+// the contender's new guard alone. ENOENT is the POSIX face; EPERM is how
+// Windows answers for a directory that is mid-removal.
+for (const statCode of ["ENOENT", "EPERM"]) {
+  test(`a guard whose stat fails with ${statCode} is not taken from the contender who re-creates it`, async () => {
+    const temp = fs.mkdtempSync(path.join(os.tmpdir(), "career-ops-scheduled-vanish-"));
+    const resource = path.join(temp, "resource");
+    const guardDir = `${resource}.recovery.lock`;
+    const guardOwner = path.join(guardDir, "owner.json");
+    const originalRead = fs.readFileSync;
+    const originalStat = fs.statSync;
+    let contender = null;
+    fs.mkdirSync(guardDir);
+    fs.writeFileSync(guardOwner, JSON.stringify({ pid: process.pid, token: "holder" }), "utf8");
+    try {
+      fs.readFileSync = (file, ...args) => {
+        if (String(file) === guardOwner && contender === null && fs.existsSync(guardOwner)) {
+          fs.unlinkSync(guardOwner);
+          fs.rmdirSync(guardDir);
+        }
+        return originalRead(file, ...args);
+      };
+      fs.statSync = (file, ...args) => {
+        if (String(file) !== guardDir || contender !== null) return originalStat(file, ...args);
+        try {
+          originalStat(file, ...args);
+        } catch {
+          // The released guard is gone, as the real stat just proved.
+        }
+        fs.mkdirSync(guardDir);
+        contender = new Promise((resolve) => setTimeout(() => {
+          let error = null;
+          try {
+            fs.writeFileSync(guardOwner, JSON.stringify({ pid: process.pid, token: "contender" }), "utf8");
+          } catch (writeError) {
+            error = writeError;
+          }
+          fs.rmSync(guardDir, { recursive: true, force: true });
+          resolve(error);
+        }, 30));
+        const error = new Error(`${statCode}: injected stat failure, stat '${file}'`);
+        error.code = statCode;
+        throw error;
+      };
+      let entered = false;
+      await withResourceLock(resource, async () => { entered = true; }, { retryMs: 5, timeoutMs: 2_000 });
+      assert.equal(entered, true);
+      assert.ok(contender, "the injected interleaving never ran");
+      assert.equal(await contender, null, "the contender's new guard was taken over before it could write owner.json");
+    } finally {
+      fs.readFileSync = originalRead;
+      fs.statSync = originalStat;
+      await contender;
+      fs.rmSync(temp, { recursive: true, force: true });
+    }
+  });
+}
+
 test("a worker crash after a persisted claim leaves the queue recoverable", async () => {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), "career-ops-scheduled-claim-crash-"));
   const storePath = path.join(temp, "scheduled-jobs.json");

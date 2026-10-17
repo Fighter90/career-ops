@@ -9,6 +9,7 @@ import { CAPS } from "@/lib/worker-capabilities.mjs";
 import { scopeFrom } from "@/lib/claude-invocation.mjs";
 import { fencingReport } from "@/lib/cli-fencing.mjs";
 import { codexFencingSupported } from "@/lib/cli-fencing-probe.mjs";
+import { readJsonObject } from "@/lib/json-body";
 
 // Deny list DERIVED, never hand-written: every one of the six advisor argvs
 // that spelled its own omitted MultiEdit, which --permission-mode acceptEdits
@@ -44,12 +45,8 @@ Follow modes/discover.md exactly. You are running headless for the web:
 `;
 
 export async function POST(req: Request) {
-  let body: { query?: string; cliId?: string };
-  try {
-    body = await req.json();
-  } catch {
-    return Response.json({ error: "bad json" }, { status: 400 });
-  }
+  const body = await readJsonObject<{ query?: string; cliId?: string }>(req);
+  if (!body) return Response.json({ error: "bad json" }, { status: 400 });
   const query = (body.query || "").trim();
   const requestedCliId = body.cliId;
   if (!query || !requestedCliId) return Response.json({ error: "query and cliId required" }, { status: 400 });

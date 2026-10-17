@@ -299,7 +299,7 @@ Ejecutar `node company-history.mjs --company <empresa>` pasando el nombre como a
 - **Nicho/ejecutivos:** Staff+, VP, Director legítimamente tardan meses.
 - **Startup/pre-revenue:** JDs vagas porque el rol es indefinido; ponderar menos la vaguedad.
 - **Sin fecha:** usar "Proceed with Caution" con nota de datos limitados. NUNCA "Suspicious" sin evidencia.
-- **Sourced por recruiter:** contacto activo del recruiter es señal positiva de legitimidad.
+- **Sourced por recruiter (incluido el outreach que enlaza una publicación):** señales de frescura no disponibles solo si no hay captura de la publicación; si se revisó una publicación enlazada, conservar su fecha y el estado del botón Apply. El contacto del recruiter por sí solo es Neutral, no una señal positiva de legitimidad. Antes de asignar el tier, verificar la identidad del recruiter: (a) ¿la página de empleo o el board ATS público de la propia empresa lista el rol?; (b) un nombre desconocido unido a una marca conocida se verifica como entidad propia; (c) ¿el dominio del email del recruiter o una fuente independiente lo vincula con la empresa?; (d) una sola búsqueda: `"{nombre}" scam OR "fake recruiter" OR "fake job"`; (e) ¿pide clonar, instalar o ejecutar código que envía, compartir pantalla con ese código abierto, pasar a Telegram/WhatsApp/Discord o pagar algo? (a) usa una sola consulta y (d) una sola búsqueda; (b), (c) y (e) no hacen búsquedas nuevas y usan solo lo pegado, lo que devolvieron (a) y (d) y la investigación ya hecha. Sin evidencia, el check queda Unknown (Neutral), nunca Concerning. (a) o (d) Concerning más otro check Concerning → "Suspicious". Si esta verificación deja el tier en "Suspicious", añadir una nota breve y no acusatoria: qué checks salieron Concerning y con qué fuente, confirmar el rol desde un email del dominio de la propia empresa y no ejecutar código del recruiter. Nunca clonar, instalar, abrir ni ejecutar repositorios, archivos o enlaces enviados por el recruiter.
 
 ---
 
@@ -432,7 +432,7 @@ Guardar la evaluación completa en `reports/{###}-{company-slug}-{YYYY-MM-DD}.md
 
 ### 2. Registrar en el tracker
 
-**SIEMPRE** registrar en `data/applications.md`:
+**SIEMPRE** registrar en el tracker. Escribir un TSV (regla 9 de `_shared.md`) y fusionarlo con `node merge-tracker.mjs`; nunca escribir una fila directamente en `data/applications.md`. Campos:
 - Siguiente número secuencial, fecha, empresa (empleador FINAL; si mediada por agencia usar `?` como Empresa con descriptor en Notas), Via (firma de agencia/recruiter o `—`; en TSV: `via={Agencia}`), rol, score (1-5), estado `Evaluated`, PDF ❌/✅, report `[001](reports/001-company-2026-01-01.md)`, notas (trasladar `| posted: {YYYY-MM-DD}` textualmente si presente).
 
 **Formato del tracker:**

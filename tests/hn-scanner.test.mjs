@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -60,7 +60,7 @@ test('Hacker News AI Extraction Logic', async (t) => {
 // responses, Gemini fails the way an invalid key does, and any other request is
 // recorded in `unexpected` and refused. With `serveHn: false` every request is
 // refused, for runs that must not reach the network at all.
-function writeFetchFixture(dir, { serveHn = true } = {}) {
+function writeFetchFixture(dir, { serveHn = true, children = null } = {}) {
   const unexpected = join(dir, 'unexpected-requests');
   const preload = join(dir, 'fetch-fixture.cjs');
   writeFileSync(preload, `
@@ -75,7 +75,7 @@ function writeFetchFixture(dir, { serveHn = true } = {}) {
         return json({ hits: [{ objectID: '424242', title: 'Ask HN: Who is hiring? (September 2026)' }] });
       }
       if (serveHn && url.includes('hn.algolia.com/api/v1/items/424242')) {
-        return json({ children: [
+        return json({ children: ${JSON.stringify(children)} || [
           { text: 'Stripe | Software Engineer | Remote | https://stripe.com/jobs/1' },
           { text: 'Acme | Software Engineer | Berlin | https://acme.example/jobs/2' },
         ] });
@@ -180,6 +180,37 @@ test('scan-hn refuses a portals.yml that does not parse instead of scanning with
     assert.doesNotMatch(broken.stdout, /Match:/);
     assert.equal(existsSync(refused.unexpected), false, 'a run with an unparseable portals.yml reached the network');
     assert.equal(existsSync(join(dir, 'data', 'pipeline.md')), false, 'a run with an unparseable portals.yml wrote data/pipeline.md');
+  } finally {
+    rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+  }
+});
+
+// The seen set holds each URL in the form normalizeUrlForDedup() gives it (path
+// lowercased, trailing slash and tracking parameters dropped), and the scanner
+// used to look a posting up by its raw URL. A posting written with a trailing
+// slash, a capital in its path or a utm parameter was therefore new again on
+// every run, and landed in pipeline.md and scan-history a second time.
+test('scan-hn does not add a posting again when its URL is not already in normalized form', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'career-ops-scanhn-'));
+  try {
+    mkdirSync(join(dir, 'data'), { recursive: true });
+    const { preload, unexpected } = writeFetchFixture(dir, { children: [
+      { text: 'Acme | Software Engineer | Remote | https://acme.example/Careers/Senior-Engineer/' },
+      { text: 'Beta | Software Engineer | Berlin | https://beta.example/jobs/42?utm_source=hn' },
+    ] });
+
+    const first = runScanHn(dir, preload, [], { GEMINI_API_KEY: '' });
+    assert.equal(first.status, 0, `first run failed\n${first.stderr}`);
+    assert.match(first.stdout, /New offers:\s+2/);
+
+    const second = runScanHn(dir, preload, [], { GEMINI_API_KEY: '' });
+    assert.equal(second.status, 0, `second run failed\n${second.stderr}`);
+    assert.match(second.stdout, /Postings fetched:\s+2/);
+    assert.match(second.stdout, /New offers:\s+0/, `the second run re-added postings it had already recorded:\n${second.stdout}`);
+
+    const pipeline = readFileSync(join(dir, 'data', 'pipeline.md'), 'utf8');
+    assert.equal((pipeline.match(/^- \[ \] /gm) || []).length, 2, `pipeline.md should list each posting once:\n${pipeline}`);
+    assert.equal(existsSync(unexpected), false, 'scan-hn made a request outside the fixture');
   } finally {
     rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   }

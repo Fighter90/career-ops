@@ -17,7 +17,7 @@ console.log('\ndoctor.mjs — skill entrypoint stubs');
 const DOCTOR = join(ROOT, 'doctor.mjs');
 const POINTER = '../../../.agents/skills/career-ops/SKILL.md';
 const CLAUDE = '.claude/skills/career-ops/SKILL.md';
-const CURSOR = '.cursor/skills/career-ops/SKILL.md';
+const OPENCODE = '.opencode/skills/career-ops/SKILL.md';
 
 function runDoctor(cwd) {
   try {
@@ -174,9 +174,9 @@ if (process.platform !== 'win32') {
   const dir = mkdtempSync(join(tmpdir(), 'co-skill-stub-3-'));
   try {
     put(dir, CLAUDE, `${POINTER}\n`);
-    put(dir, CURSOR, POINTER);
+    put(dir, OPENCODE, POINTER);
     const warning = skillWarning(runDoctor(dir));
-    if (warning && warning.includes(CLAUDE) && warning.includes(CURSOR) && /^2 CLI skill entrypoints are/.test(warning)) {
+    if (warning && warning.includes(CLAUDE) && warning.includes(OPENCODE) && /^2 CLI skill entrypoints are/.test(warning)) {
       pass('every stub is listed and counted, tolerating a trailing newline');
     } else {
       fail(`multi-stub warning wrong: ${JSON.stringify(warning)}`);

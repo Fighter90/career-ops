@@ -1,6 +1,7 @@
 import { fillSession, handoffSession, getSession } from "@/lib/apply/session";
 import { resolveSessionCv } from "@/lib/apply/cv";
 import type { ApplyField } from "@/lib/apply/extract";
+import { readJsonObject } from "@/lib/json-body";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -10,12 +11,8 @@ export const maxDuration = 120;
 // each step for the "behind the scenes" strip, then bring the window to the front
 // so the HUMAN reviews and submits. NEVER submits — there is no submit path here.
 export async function POST(req: Request) {
-  let body: { sessionId?: string; answers?: Record<string, string>; fields?: ApplyField[]; handoff?: boolean; company?: string; application?: string };
-  try {
-    body = await req.json();
-  } catch {
-    return Response.json({ error: "bad json" }, { status: 400 });
-  }
+  const body = await readJsonObject<{ sessionId?: string; answers?: Record<string, string>; fields?: ApplyField[]; handoff?: boolean; company?: string; application?: string }>(req);
+  if (!body) return Response.json({ error: "bad json" }, { status: 400 });
   const { sessionId, answers = {}, fields = [], handoff, company, application } = body;
   if (!sessionId) return Response.json({ error: "sessionId required" }, { status: 400 });
   if (company !== undefined && typeof company !== "string") {

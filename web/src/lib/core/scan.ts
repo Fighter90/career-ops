@@ -9,6 +9,7 @@ import { titleFit } from "@/lib/title-fit.mjs";
 import { resolveScanTimeoutMs, scanTimeoutMessage } from "./scan-timeout.mjs";
 import { ATS_LABEL, ATS_SOURCES, type AtsSource, type DiscoveredOffer, type ExploreFilters, type FitBand, type ScanEvent } from "@/lib/explore";
 import { mergeScanResults, timedOutMessage } from "./scan-merge.mjs";
+import { parseScanJsonStdout } from "./scan-json.mjs";
 
 export type { DiscoveredOffer, ScanEvent, AtsSource } from "@/lib/explore";
 export { ATS_SOURCES } from "@/lib/explore";
@@ -362,12 +363,7 @@ function runScanner(
     });
     child.on("close", () => {
       if (useJson) {
-        let j: ScanJson | null = null;
-        try {
-          j = JSON.parse(jsonOut.trim()) as ScanJson;
-        } catch {
-          j = null;
-        }
+        const j = parseScanJsonStdout(jsonOut) as ScanJson | null;
         settle({ json: j && Array.isArray(j.offers) ? j : null, timedOut });
         return;
       }

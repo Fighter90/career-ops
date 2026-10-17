@@ -24,6 +24,7 @@ import { execFileSync, spawnSync } from 'child_process';
 import { readFileSync, writeFileSync, mkdtempSync, mkdirSync, rmSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
+import { fileURLToPath } from 'url';
 import { pass, fail, hermeticGitEnv, hermeticGitRunner } from './helpers.mjs';
 
 console.log('\nhermetic git env — ambient GIT_CONFIG* must not reach a fixture');
@@ -182,4 +183,58 @@ try {
 } finally {
   rmSync(ambientRoot, { recursive: true, force: true });
   if (fixtureDir) rmSync(fixtureDir, { recursive: true, force: true });
+}
+
+// Signing is the same leak through a different key. With `tag.gpgSign = true`
+// in a contributor's ~/.gitconfig, `git tag <name>` stops making a lightweight
+// tag: git tries to make a signed, annotated one, has no message for it, and
+// dies with "no tag message?". The #3052 suite builds a release fixture with
+// exactly that command through a runner that inherited the environment, so on
+// such a machine it threw at the tag and none of the assertions after it ran.
+// `commit.gpgSign` is the quieter half: it signs every fixture commit with the
+// contributor's own key, and fails outright where no key is reachable.
+//
+// The real suite is run here, in a child, under a global config that turns both
+// on and points signing at a program that does not exist. A fixture that still
+// reads the contributor's config cannot commit or tag at all under it, so this
+// passes only if the suite's repositories are sealed. GIT_CONFIG_GLOBAL stands
+// in for ~/.gitconfig (it replaces it), which keeps the test off the real one.
+console.log('\nhermetic git env — the #3052 release fixture builds under ambient signing config');
+
+const signingRoot = mkdtempSync(join(tmpdir(), 'career-ops-hermetic-signing-'));
+try {
+  const signingConfig = join(signingRoot, 'gitconfig');
+  writeFileSync(signingConfig, [
+    '[tag]', '\tgpgSign = true', '\tforceSignAnnotated = true',
+    '[commit]', '\tgpgSign = true',
+    '[gpg]', `\tprogram = ${join(signingRoot, 'no-such-signing-program')}`,
+    '',
+  ].join('\n'));
+  const suite = fileURLToPath(new URL('./updater-apply-target-verification.test.mjs', import.meta.url));
+  const env = { ...process.env, GIT_CONFIG_GLOBAL: signingConfig };
+  // Nothing else may override the file this test injects.
+  for (const name of ['GIT_CONFIG_COUNT', 'GIT_CONFIG_PARAMETERS', 'GIT_CONFIG']) delete env[name];
+  const child = spawnSync(process.execPath, [suite], { encoding: 'utf-8', timeout: 120000, env });
+  const out = child.stdout || '';
+  const failures = out.split('\n').filter((line) => line.includes('❌'));
+  const passes = out.split('\n').filter((line) => line.includes('✅')).length;
+
+  if (child.status === 0 && failures.length === 0 && passes > 0) {
+    pass(`the #3052 suite runs to the end under ambient tag.gpgSign / commit.gpgSign (${passes} assertions)`);
+  } else {
+    const why = failures[0]?.trim()
+      || (child.stderr || '').split('\n').find((line) => /fatal:|error:|Error: /.test(line))?.trim()
+      || 'no output';
+    fail(`the #3052 suite does not survive ambient signing config (exit ${child.status}, ${passes} assertions ran): ${why}`);
+  }
+  // Both tag kinds the fixture makes must still be what it asked for. Proven by
+  // the suite's own assertions on the lightweight and the annotated release tag,
+  // which sit after the tag commands and so only run when those succeed.
+  if (/a release target that IS the tag commit is accepted/.test(out)) {
+    pass('the release fixture got past its lightweight and annotated tags');
+  } else {
+    fail('the release fixture never reached the assertions after its `git tag` commands');
+  }
+} finally {
+  rmSync(signingRoot, { recursive: true, force: true });
 }

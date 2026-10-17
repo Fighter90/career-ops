@@ -97,6 +97,18 @@ export function loadProfileCadence(profilePath = PROFILE_FILE) {
   return cadence;
 }
 
+// follow_ups.enabled: false in the profile turns the follow-up features off.
+// Anything else, including a missing or unreadable profile, keeps them on, so
+// an install that never set the key behaves exactly as before.
+export function loadFollowupsEnabled(profilePath = PROFILE_FILE) {
+  if (!profilePath || !existsSync(profilePath)) return true;
+  try {
+    return yaml.load(readFileSync(profilePath, 'utf-8'))?.follow_ups?.enabled !== false;
+  } catch {
+    return true;
+  }
+}
+
 export function resolveCadenceConfig({ profilePath = PROFILE_FILE, appliedDays = appliedDaysOverride } = {}) {
   const cadence = { ...DEFAULT_CADENCE, ...loadProfileCadence(profilePath) };
   const cliApplied = positiveInteger(appliedDays);
@@ -832,7 +844,16 @@ export function computeNextFollowupDate(status, appDate, lastFollowupDate, follo
 // requires followupCount >= applied_max_followups) simply never triggers —
 // no error, no guessing, matching the same "absent optional file = pass
 // through" convention used elsewhere in this project.
-export function analyzeFromContent(trackerContent, followupsContent = '') {
+export function analyzeFromContent(trackerContent, followupsContent = '', { enabled = true } = {}) {
+  if (!enabled) {
+    return {
+      followupsEnabled: false,
+      metadata: { analysisDate: today().toISOString().split('T')[0], totalTracked: 0, actionable: 0, overdue: 0, urgent: 0, cold: 0, waiting: 0, retired: 0 },
+      entries: [],
+      cadenceConfig: CADENCE,
+      cadenceDefaults: DEFAULT_CADENCE,
+    };
+  }
   const apps = parseTrackerContent(trackerContent);
   if (apps.length === 0) {
     // cadenceDefaults rides along on the error. It is a constant, so it is just
@@ -840,7 +861,20 @@ export function analyzeFromContent(trackerContent, followupsContent = '') {
     // state where a consumer cannot do without it: on a first run the web
     // cadence form has no profile overrides to fall back on either, so
     // withholding it renders six empty fields with nothing to type back in.
-    return { error: 'No applications found in tracker.', cadenceDefaults: DEFAULT_CADENCE };
+    // The rest of the normal shape rides along too, zeroed, so a reader that
+    // skips `error` (the web follow-ups page) renders an empty tracker instead
+    // of "cadence unavailable".
+    return {
+      error: 'No applications found in tracker.',
+      noData: true,
+      metadata: {
+        analysisDate: today().toISOString().split('T')[0],
+        totalTracked: 0, actionable: 0, overdue: 0, urgent: 0, cold: 0, waiting: 0, retired: 0,
+      },
+      entries: [],
+      cadenceConfig: CADENCE,
+      cadenceDefaults: DEFAULT_CADENCE,
+    };
   }
 
   const followups = parseFollowups(followupsContent);
@@ -977,13 +1011,18 @@ export function analyzeFromContent(trackerContent, followupsContent = '') {
 
 // --- Main analysis (disk-backed CLI entry point) ---
 function analyze() {
+  if (!loadFollowupsEnabled()) return analyzeFromContent('', '', { enabled: false });
   const trackerContent = existsSync(APPS_FILE) ? readFileSync(APPS_FILE, 'utf-8') : '';
   const followupsContent = existsSync(FOLLOWUPS_FILE) ? readFileSync(FOLLOWUPS_FILE, 'utf-8') : '';
-  return analyzeFromContent(trackerContent, followupsContent);
+  return analyzeFromContent(trackerContent, followupsContent, { enabled: loadFollowupsEnabled() });
 }
 
 // --- Summary mode ---
 function printSummary(result) {
+  if (result.followupsEnabled === false) {
+    console.log('\nFollow-ups are turned off (follow_ups.enabled: false in config/profile.yml).\n');
+    return;
+  }
   if (result.error) {
     console.log(`\n${result.error}\n`);
     return;
@@ -1077,5 +1116,8 @@ if (isMainModule(import.meta.url)) {
     console.log(JSON.stringify(result, null, 2));
   }
 
-  if (result.error) process.exit(1);
+  // An empty tracker is a new user, not a failure. analyze-patterns.mjs and the
+  // other tracker readers exit 0 here too; exiting 1 made the web dashboard read
+  // a first run as "cadence unavailable".
+  if (result.error && !result.noData) process.exit(1);
 }

@@ -266,3 +266,9 @@ data/jds/
 data/output/
 data/documents/
 data/interview-prep/
+
+# Repo-local LaTeX engine placed by install-latex-engine.mjs (.part is its staging copy)
+/tectonic
+/tectonic.exe
+/tectonic.part
+/tectonic.part.exe

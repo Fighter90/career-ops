@@ -225,6 +225,9 @@ export default {
       console.error(`⚠️  rippling: ${entry.name} truncated at max_pages=${maxPages} (${jobs.length} jobs) — raise max_pages on this entry for more`);
     }
 
+    // Cap and fetch-error stops both leave the board partial; tag it (the workdayTruncated convention).
+    if (stopReason === STOP_REASON.CAP || stopReason === STOP_REASON.FETCH_ERROR) /** @type {any} */ (jobs).ripplingTruncated = true;
+
     return jobs;
   },
 };

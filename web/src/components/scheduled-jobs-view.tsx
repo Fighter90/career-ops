@@ -14,6 +14,7 @@ import {
   Sparkles,
   Zap,
 } from "lucide-react";
+import { scanSuccessLabel } from "@/lib/scan-success.mjs";
 import { CreateJobModal } from "./scheduled-scans/create-job-modal";
 import { EditJobModal } from "./scheduled-scans/edit-job-modal";
 import { JobCard } from "./scheduled-scans/job-card";
@@ -139,7 +140,7 @@ export function ScheduledJobsView() {
   const successRuns = store.runs.filter((r) => r.state === "success").length;
   const failedRuns = store.runs.filter((r) => r.state === "failed").length;
   const totalRolesFound = store.runs.reduce((acc, r) => acc + (r.rolesFound || 0), 0);
-  const successRate = totalRuns > 0 ? Math.round((successRuns / totalRuns) * 100) : 100;
+  const successRate = scanSuccessLabel(totalRuns, successRuns);
 
   return (
     <div className="mx-auto max-w-5xl px-5 py-8 md:px-8 space-y-8">
@@ -190,7 +191,7 @@ export function ScheduledJobsView() {
         <StatCard label="Active Scans" value={activeJobs.length} subtitle={`${jobsList.length} total jobs`} icon={<Zap className="size-4 text-emerald-500" />} />
         <StatCard label="Executed Runs" value={totalRuns} subtitle={`${successRuns} successful`} icon={<Layers className="size-4 text-brand" />} />
         <StatCard label="Roles Discovered" value={totalRolesFound} subtitle="Pushed to pipeline" icon={<Sparkles className="size-4 text-amber-500" />} />
-        <StatCard label="Success Rate" value={`${successRate}%`} subtitle={`${failedRuns} failed runs`} icon={<CheckCircle2 className="size-4 text-emerald-500" />} />
+        <StatCard label="Success Rate" value={successRate} subtitle={`${failedRuns} failed runs`} icon={<CheckCircle2 className="size-4 text-emerald-500" />} />
       </div>
 
       {/* OS Task Scheduler Banner */}

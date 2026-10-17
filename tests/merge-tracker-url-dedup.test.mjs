@@ -489,6 +489,64 @@ ok('KNOWN LIMITATION: an unmapped aggregator id shape over-merges two requisitio
   assertMerged(rows, 'no id rule for this board yet → fuzzy tier still decides');
 });
 
+// ─────────────── a language param on one URL of a pair ───────────────
+//
+// An ATS that serves every language version of one posting at one URL tells
+// them apart by a param (Recruitee `?lang=`, Personio `?language=`). The bare
+// URL is the posting's default version, whose language it does not say. So a
+// bare URL against one with a param is not proof of two postings — the report
+// tiers still match across it — but not proof of one either, so the fuzzy
+// company+role tier stays blocked. Two known, different languages are two
+// language versions and stay two rows.
+
+ok('a SKIPped bare row does not swallow a new evaluation of the English version', () => {
+  const rows = mergeTwoWithUrls(
+    'https://acme.recruitee.com/o/director-of-marketing',
+    'https://acme.recruitee.com/o/director-of-marketing?lang=en', 'SKIP');
+  assert.equal(rows.length, 2, 'the English evaluation gets its own row');
+  const skipped = rows.find(r => r.split('|')[1].trim() === '1');
+  assert.ok(skipped && skipped.includes('SKIP') && skipped.includes('4.0/5') && skipped.includes('1-acme.md'),
+    'the SKIP row is untouched');
+});
+
+ok('bare URL vs ?lang= with a new report is not folded by title (both directions)', () => {
+  assert.equal(mergeTwoWithUrls(
+    'https://acme.recruitee.com/o/director-of-marketing',
+    'https://acme.recruitee.com/o/director-of-marketing?lang=de').length, 2, 'bare row, ?lang= addition');
+  assert.equal(mergeTwoWithUrls(
+    'https://acme.jobs.personio.de/job/7001?language=en',
+    'https://acme.jobs.personio.de/job/7001').length, 2, '?language= row, bare addition');
+});
+
+ok('two known, different languages of one page stay TWO rows', () => {
+  const rows = mergeTwoWithUrls(
+    'https://acme.recruitee.com/o/director-of-marketing?lang=de',
+    'https://acme.recruitee.com/o/director-of-marketing?lang=en');
+  assert.equal(rows.length, 2, 'two language versions of one posting are two rows');
+});
+
+ok('a language param does not hide a different page: still TWO rows', () => {
+  const rows = mergeTwoWithUrls(
+    'https://acme.recruitee.com/o/director-of-marketing',
+    'https://acme.recruitee.com/o/head-of-marketing?lang=de');
+  assert.equal(rows.length, 2, 'different paths are different postings, whatever the language');
+});
+
+ok('a re-evaluation of the same report updates the row across bare URL vs ?lang=', () => {
+  const env = makeEnv();
+  try {
+    writeTracker(env, [
+      '| 1 | 2026-06-01 | Acme | Director of Marketing | 4.0/5 | Evaluated | ❌ | [1](reports/1-acme.md) | n | https://acme.recruitee.com/o/director-of-marketing?lang=en |',
+    ]);
+    addTsv(env, '1-acme.tsv', ['1', '2026-06-03', 'Acme', 'Director of Marketing', 'Evaluated', '4.1/5', '❌',
+      '[1](reports/1-acme.md)', 're-eval', 'https://acme.recruitee.com/o/director-of-marketing']);
+    runMerge(env);
+    const rows = trackerRows(env);
+    assert.equal(rows.length, 1, `expected the row to be UPDATED through the report number, got ${rows.length} rows`);
+    assert.ok(rows[0].includes('4.1/5'), 're-eval score written through');
+  } finally { cleanup(env); }
+});
+
 ok('row with `---` in its URL (Workday slug) stays visible to dedup', () => {
   const env = makeEnv();
   try {

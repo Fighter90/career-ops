@@ -20,6 +20,7 @@ import { isMainModule } from './lib/is-main-module.mjs';
 import { load as yamlLoad } from 'js-yaml';
 import { resolveColumns, parseTrackerRow, normalizeVia } from './tracker-parse.mjs';
 import { getCareerOpsRoot } from './path-resolver.mjs';
+import { loadCanonicalStates, resolveCanonicalStateId, foldStatusInput } from './tracker-utils.mjs';
 import { atsVendorOf } from './ats-vendor.mjs';
 import { flagValue, hasFlag, validateFlags } from './lib/cli-flags.mjs';
 import { localToday } from './lib/local-today.mjs';
@@ -68,6 +69,8 @@ const MACHINE_SUMMARY_FIELDS = new Set([
   // Reporting line stated by the JD, verbatim (report + Machine Summary only).
   // Allowlisted so it round-trips; no consumer logic yet.
   'reports_to',
+  // Optional local cache metadata; never an input to candidate pattern analysis.
+  'job_facts_cache',
   // Block B's requirement -> importance table, mirrored row by row (evidence
   // tier, importance band, match). Allowlisted so it round-trips; no consumer
   // logic yet, deliberately: importance is score-neutral, so nothing that folds
@@ -95,27 +98,18 @@ const summaryMode = args.includes('--summary');
 let MIN_THRESHOLD = 5;
 let MIN_VENDOR_N = 8;
 
-// --- Status normalization (mirrors verify-pipeline.mjs) ---
-const ALIASES = {
-  'evaluada': 'evaluated', 'condicional': 'evaluated', 'hold': 'evaluated',
-  'evaluar': 'evaluated', 'verificar': 'evaluated',
-  'aplicado': 'applied', 'enviada': 'applied', 'aplicada': 'applied',
-  'applied': 'applied', 'sent': 'applied',
-  'respondido': 'responded',
-  'screening': 'assessment', 'online assessment': 'assessment', 'online_assessment': 'assessment', 'online screening': 'assessment',
-  'entrevista': 'interview',
-  'oferta': 'offer',
-  'rechazado': 'rejected', 'rechazada': 'rejected',
-  'contratado': 'hired', 'contratada': 'hired', 'accepted': 'hired', 'accept': 'hired',
-  'descartado': 'discarded', 'descartada': 'discarded',
-  'cerrada': 'discarded', 'cancelada': 'discarded',
-  'no aplicar': 'skip', 'no_aplicar': 'skip', 'monitor': 'skip', 'geo blocker': 'skip',
-};
+// --- Status normalization ---
+// Every alias comes from templates/states.yml, the single source of truth —
+// no table here. states.yml ships with the code, so it is read from the
+// script's own directory, never from the (overridable) data root.
+const CANONICAL_STATES = loadCanonicalStates(
+  join(dirname(fileURLToPath(import.meta.url)), 'templates', 'states.yml'));
 
 function normalizeStatus(raw) {
-  const clean = raw.replace(/\*\*/g, '').trim().toLowerCase()
-    .replace(/\s+\d{4}-\d{2}-\d{2}.*$/, '').trim();
-  return ALIASES[clean] || clean;
+  // An unrecognized status keeps its own folded text, so it still shows up
+  // under its own name in the funnel instead of vanishing.
+  return resolveCanonicalStateId(raw, CANONICAL_STATES)
+    ?? foldStatusInput(String(raw ?? '').replace(/\s+\d{4}-\d{2}-\d{2}.*$/, ''));
 }
 
 export function classifyOutcome(status) {

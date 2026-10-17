@@ -53,10 +53,12 @@ import joinProvider from './providers/join.mjs';
 import { isMainModule } from './lib/is-main-module.mjs';
 import { getCareerOpsRoot } from './path-resolver.mjs';
 import { DEFAULT_SMALL_THRESHOLD, isSmallBoard, smallBoardDetail } from './lib/small-board.mjs';
+import { findBlacklistEntry, loadBlacklist } from './scan.mjs';
 
 const CAREER_OPS = dirname(fileURLToPath(import.meta.url));
 const DATA_ROOT = getCareerOpsRoot();
 const PORTALS_PATH = process.env.CAREER_OPS_PORTALS || join(DATA_ROOT, 'portals.yml');
+const BLACKLIST_PATH = process.env.CAREER_OPS_BLACKLIST || join(DATA_ROOT, 'data', 'blacklist.md');
 
 // Safe charset for a slug that will be interpolated into an ATS URL. Consistent
 // with the SLUG_RE guard in scan-ats-full.mjs and seeds/vc-portfolios.mjs — a
@@ -492,31 +494,70 @@ export function dedupeAgainstPortals(matches, existingEntries) {
  */
 export function insertIntoTrackedCompanies(fileText, snippets) {
   if (!snippets.length) return fileText;
-  const block = snippets.join('');
+  let block = snippets.join('');
 
-  const header = fileText.match(/^tracked_companies:[ \t]*$/m);
+  // The header line as a user can legitimately write it: bare, with a trailing
+  // comment, or as an empty flow list (`tracked_companies: []`). The last two
+  // used to miss this match, so a SECOND `tracked_companies:` key was appended
+  // to the file, which no YAML parser accepts.
+  const header = fileText.match(/^tracked_companies:[ \t]*(?:\[[ \t]*\][ \t]*)?(?:#[^\n]*)?$/m);
   if (!header) {
     // No block at all — append a fresh one at EOF.
     const sep = fileText.endsWith('\n') ? '\n' : '\n\n';
     return `${fileText}${sep}tracked_companies:${block}`;
   }
 
+  // An empty flow list becomes the block form; its trailing comment stays.
+  const headerText = header[0].replace(/^(tracked_companies:)[ \t]*\[[ \t]*\]/, '$1');
   const headerEnd = header.index + header[0].length; // index of the newline after the header
   const rest = fileText.slice(headerEnd);
   // Find the block's end: the next top-level key (a line starting with a
   // non-space, non-# char and containing a colon). Comments and indented lines
   // stay in-block. `m` anchors ^ to line starts; the leading \n keeps us from
-  // matching the header line itself.
-  const boundary = rest.match(/\n[^\s#][^\n]*:/);
-  const insertAt = boundary ? headerEnd + boundary.index : fileText.length;
+  // matching the header line itself. A list item written at column 0 (`- name:`,
+  // valid YAML and what some YAML emitters produce) is part of the block, not a
+  // key, so a line that starts a sequence entry is never the boundary.
+  const boundary = rest.match(/\n(?!-(?:[ \t]|\r?\n|$))[^\s#][^\n]*:/);
+  const blockEnd = boundary ? headerEnd + boundary.index : fileText.length;
 
-  let before = fileText.slice(0, insertAt);
-  const after = fileText.slice(insertAt);
+  // Match the indentation of the entries already there: our snippets are
+  // indented for the template's two-space style, and a sequence whose entries
+  // sit at two different indents is not valid YAML.
+  const firstItem = fileText.slice(headerEnd, blockEnd).match(/\n([ ]*)-[ \t]/);
+  if (firstItem && firstItem[1].length !== 2) {
+    const shift = firstItem[1].length - 2;
+    block = block.replace(/^( *)(\S)/gm, (_m, spaces, ch) => (
+      shift > 0 ? `${' '.repeat(shift)}${spaces}${ch}` : `${spaces.slice(Math.min(-shift, spaces.length))}${ch}`
+    ));
+  }
+
+  let before = fileText.slice(0, header.index) + headerText + fileText.slice(headerEnd, blockEnd);
+  const after = fileText.slice(blockEnd);
   // Trim trailing blank lines that belong to the block so our leading-newline
   // snippets don't stack extra blank lines before the next key.
-  before = before.replace(/\n[ \t]*(?=\n*$)/g, (m2, off) => (off >= headerEnd ? '\n' : m2));
+  const bodyStart = header.index + headerText.length;
+  before = before.replace(/\n[ \t]*(?=\n*$)/g, (m2, off) => (off >= bodyStart ? '\n' : m2));
 
   return before + block + after;
+}
+
+/**
+ * Whether a spliced portals.yml text still parses and carries exactly the
+ * expected number of tracked_companies entries. The text splice above works on
+ * lines, not on the YAML, so --write checks its own output before replacing the
+ * user's file.
+ *
+ * @param {string} text
+ * @param {number} expectedCount
+ * @returns {boolean}
+ */
+export function splicedCorrectly(text, expectedCount) {
+  try {
+    const doc = yaml.load(text);
+    return Array.isArray(doc?.tracked_companies) && doc.tracked_companies.length === expectedCount;
+  } catch {
+    return false;
+  }
 }
 
 // ── Network functions (separated from pure logic, like vc-portfolios.mjs) ──
@@ -782,6 +823,43 @@ export async function resolveCompany(company, { vendors = VENDOR_ORDER, ctx, inc
   return { unresolved };
 }
 
+/**
+ * Split companies on the user's do-not-apply list (data/blacklist.md) away from
+ * the rest, using scan.mjs's own findBlacklistEntry so discovery and scanning
+ * agree on what is blacklisted. Before probing, a company is checked by name and
+ * by every URL it carries (a Workday URL hint AND `website`: either one can be
+ * the host a domain-scope entry names); after probing, `urlsOf` lets the caller
+ * re-check a resolved board's careers_url. A blacklisted company is never
+ * written to portals.yml: scan.mjs would drop every posting from it anyway.
+ *
+ * @returns {{allowed:any[], blacklisted:{name:string, entry:string, reason:string}[]}}
+ */
+export function partitionBlacklisted(companies, blacklist, urlsOf = (c) => [typeof c.workday === 'string' ? c.workday : null, c.website]) {
+  const allowed = [];
+  const blacklisted = [];
+  for (const c of companies) {
+    const urls = urlsOf(c).filter(Boolean).map(asBlacklistUrl);
+    let hit = null;
+    for (const url of urls.length ? urls : ['']) {
+      hit = findBlacklistEntry(blacklist, c.name, url);
+      if (hit) break;
+    }
+    if (hit) blacklisted.push({ name: c.name, entry: hit.company, reason: hit.reason });
+    else allowed.push(c);
+  }
+  return { allowed, blacklisted };
+}
+
+/**
+ * The input format documents a bare `website: mollie.com`, which `new URL()`
+ * inside findBlacklistEntry rejects, so a scheme-less value would never reach a
+ * domain-scope entry. Give it one; a value that already has a scheme is kept.
+ */
+function asBlacklistUrl(value) {
+  const v = String(value).trim();
+  return /^[a-z][a-z0-9+.-]*:\/\//i.test(v) ? v : `https://${v}`;
+}
+
 /** Bounded-concurrency map (mirrors scan-ats-full.mjs parallelEach; not exported there). */
 async function parallelEach(items, limit, fn) {
   let i = 0;
@@ -815,10 +893,10 @@ export async function runDiscovery(companies, { vendors = VENDOR_ORDER, ctx, con
 
 // ── Summary output ────────────────────────────────────────────────────
 
-function printSummary({ resolved, unresolved, duplicates }) {
+function printSummary({ resolved, unresolved, duplicates, blacklisted = [] }) {
   console.log(`\n${'='.repeat(78)}`);
   console.log('  ATS Discovery — career-ops');
-  console.log(`  resolved: ${resolved.length} | unresolved: ${unresolved.length} | duplicates skipped: ${duplicates.length}`);
+  console.log(`  resolved: ${resolved.length} | unresolved: ${unresolved.length} | duplicates skipped: ${duplicates.length} | blacklisted skipped: ${blacklisted.length}`);
   console.log(`${'='.repeat(78)}\n`);
 
   if (resolved.length) {
@@ -837,6 +915,14 @@ function printSummary({ resolved, unresolved, duplicates }) {
     for (const u of unresolved) {
       const site = u.website ? ` [${u.website}]` : '';
       console.log(`    - ${u.name}${site}: ${u.reason}`);
+    }
+    console.log('');
+  }
+
+  if (blacklisted.length) {
+    console.log('  Skipped — on data/blacklist.md (never added):');
+    for (const b of blacklisted) {
+      console.log(`    - ${b.name} (matched "${b.entry}")${b.reason ? `: ${b.reason}` : ''}`);
     }
     console.log('');
   }
@@ -1115,17 +1201,25 @@ async function main() {
     // zero-company run gets the documented envelope, not undefined fields.
     const out = {
       metadata: {
-        resolved: 0, unresolved: 0, duplicatesSkipped: 0, fresh: 0, freshWritten: 0,
+        resolved: 0, unresolved: 0, duplicatesSkipped: 0, blacklistedSkipped: 0, fresh: 0, freshWritten: 0,
         written: false, previewOnly: true, portalsPath: PORTALS_PATH, warnings,
       },
-      resolved: [], unresolved: [],
+      resolved: [], unresolved: [], blacklisted: [],
     };
     if (opts.summary) printSummary({ resolved: [], unresolved: [], duplicates: [] });
     else console.log(JSON.stringify(out, null, 2));
     process.exit(0);
   }
 
-  const { resolved, unresolved } = await runDiscovery(companies, { vendors: opts.vendors, includeWorkday: opts.includeWorkday });
+  const blacklist = loadBlacklist(BLACKLIST_PATH);
+  const pre = partitionBlacklisted(companies, blacklist);
+  const discovered = await runDiscovery(pre.allowed, { vendors: opts.vendors, includeWorkday: opts.includeWorkday });
+  const unresolved = discovered.unresolved;
+  // A resolved board's host can hit a domain-scope entry the name did not
+  // (e.g. a company listed under a different name on a blacklisted host).
+  const post = partitionBlacklisted(discovered.resolved, blacklist, (r) => [r.careers_url]);
+  const resolved = post.allowed;
+  const blacklisted = [...pre.blacklisted, ...post.blacklisted];
   // Advisory only: resolution and exit codes are unchanged (#4772).
   flagSmallBoards(resolved, opts.smallThreshold);
 
@@ -1149,12 +1243,20 @@ async function main() {
   let written = false;
   if (opts.write && fresh.length && existsSync(PORTALS_PATH)) {
     const current = readFileSync(PORTALS_PATH, 'utf-8');
-    // Write-to-temp-then-rename: atomic on the same filesystem, so a crash
-    // mid-write can't leave the user's portals.yml truncated.
-    const tmpPath = `${PORTALS_PATH}.tmp-${process.pid}`;
-    writeFileSync(tmpPath, insertIntoTrackedCompanies(current, snippets), 'utf-8');
-    renameSyncWithRetry(tmpPath, PORTALS_PATH);
-    written = true;
+    const next = insertIntoTrackedCompanies(current, snippets);
+    if (splicedCorrectly(next, existingEntries.length + fresh.length)) {
+      // Write-to-temp-then-rename: atomic on the same filesystem, so a crash
+      // mid-write can't leave the user's portals.yml truncated.
+      const tmpPath = `${PORTALS_PATH}.tmp-${process.pid}`;
+      writeFileSync(tmpPath, next, 'utf-8');
+      renameSyncWithRetry(tmpPath, PORTALS_PATH);
+      written = true;
+    } else {
+      // A text splice cannot cover every way tracked_companies can be written.
+      // Rather than leave a portals.yml the scanner cannot parse, keep the file
+      // as it is and print the entries for the user to paste.
+      warnings.push(`--write skipped — splicing into ${PORTALS_PATH} would not leave it as valid YAML with ${existingEntries.length + fresh.length} tracked_companies entries; the file is unchanged and the entries are shown in pendingEntries to add by hand`);
+    }
   } else if (opts.write && fresh.length && !existsSync(PORTALS_PATH)) {
     warnings.push(`--write given but portals.yml not found at ${PORTALS_PATH} — printing entries instead`);
   } else if (!opts.write && fresh.length) {
@@ -1165,6 +1267,7 @@ async function main() {
     resolved: resolved.length,
     unresolved: unresolved.length,
     duplicatesSkipped: duplicates.length,
+    blacklistedSkipped: blacklisted.length,
     fresh: fresh.length,
     freshWritten: written ? fresh.length : 0,
     written,
@@ -1174,9 +1277,9 @@ async function main() {
   };
 
   if (opts.summary) {
-    printSummary({ resolved, unresolved, duplicates });
+    printSummary({ resolved, unresolved, duplicates, blacklisted });
   } else {
-    const out = { metadata, resolved, unresolved };
+    const out = { metadata, resolved, unresolved, blacklisted };
     // Show the would-be YAML whenever we didn't write it (preview, or --write
     // that couldn't find the file), so the user can paste it manually.
     if (!written) out.pendingEntries = snippets.join('');

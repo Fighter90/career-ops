@@ -33,13 +33,13 @@ The review process you'll experience here is documented end-to-end in [Agentic m
 
 ## Quick Start
 
-1. Open an issue to discuss your idea
+1. For a new feature, a new mode or command, or an architecture change, open an issue to discuss your idea (see [Before Submitting a PR](#before-submitting-a-pr))
 2. Fork the repo
 3. Create a branch (`git checkout -b feature/my-feature`)
 4. Make your changes
 5. Test with a fresh clone (see [docs/SETUP.md](docs/SETUP.md))
 6. Commit and push
-7. Open a Pull Request referencing the issue
+7. Open a Pull Request, referencing the issue if you opened one
 
 ## What to Contribute
 
@@ -187,7 +187,17 @@ npm run serve:dashboard       # launch the TUI against the repo root
 node test-all.mjs             # Full suite — run before pushing/opening a PR
 node test-all.mjs --quick     # Full suite, skipping the dashboard build
 node test-all.mjs --only providers/themuse   # Run just one provider's test(s)
+node test-all.mjs --quick --jobs 4           # Run at most 4 test files at a time
 ```
+
+**The test files under `tests/` run in parallel**, one process each, as many at
+a time as the machine has CPUs, and the inline sections of `test-all.mjs` run
+alongside them in one of those slots. `--jobs N` changes that for one run and
+`CAREER_OPS_TEST_JOBS=N` for a machine; `1` runs everything one after another
+in a single process. The log comes out in the same order either way. If a test
+passes alone and fails in a full run (or the reverse), rerun with `--jobs 1`
+and see "Parallel runs" in [`tests/README.md`](tests/README.md) for what a
+suite may not rely on.
 
 **Any new test belongs in its own file** under `tests/`, not as a numbered
 section inside `test-all.mjs`. Anything matching `tests/**/*.test.mjs` is

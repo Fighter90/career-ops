@@ -1739,7 +1739,7 @@ if (isMainModule(import.meta.url)) {
       );
 
       if (company) {
-        console.log(JSON.stringify(getCompanyCard(result, company), null, 2));
+        console.log(JSON.stringify({ ...getCompanyCard(result, company), metadata: { sources: result.metadata.sources } }, null, 2));
       } else if (summaryMode) {
         console.log(renderSummary(result));
       } else {

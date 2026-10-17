@@ -1,8 +1,8 @@
-import { existsSync, readFileSync, readdirSync } from 'fs';
+import { existsSync, readFileSync } from 'fs';
 import path from 'path';
 import { atsVendorOf } from './ats-vendor.mjs';
 import { parseScanHistoryLine } from './lib/scan-history-columns.mjs';
-import { detectColumns, extractCellUrl, extractTrackerReportNumbers, isHeaderRow, isSeparatorRow } from './tracker-parse.mjs';
+import { detectColumns, extractCellUrl, isHeaderRow, isSeparatorRow, linkedReportNumbers, reportUrlForNumbers as reportUrlFromReports } from './tracker-parse.mjs';
 import { getCareerOpsRoot, resolveTrackerPath } from './path-resolver.mjs';
 import { resolveWorkspaceRoot } from './tracker-utils.mjs';
 
@@ -64,32 +64,8 @@ function seedOf(company, rawUrl, source) {
   };
 }
 
-function linkedReportNumbers(reportCell, notesCell) {
-  const link = String(reportCell ?? '').match(/\[([^\]]*)\]\(([^)]+)\)/);
-  if (!link) return extractTrackerReportNumbers(reportCell, notesCell);
-  // Reuse the tracker's canonical local-target validation. It rejects HTTP(S)
-  // and protocol-relative links, and returns both numbers on a label/target
-  // mismatch. Exactly one number therefore proves a local, self-consistent
-  // report link. A present-but-invalid link must not fall back to Notes.
-  const validated = extractTrackerReportNumbers(reportCell);
-  return validated.length === 1 ? validated : [];
-}
-
-function reportUrlForNumbers(reportNumbers, reportsRoot) {
-  if (!reportsRoot || !existsSync(reportsRoot) || reportNumbers.length === 0) return null;
-  let filenames;
-  try { filenames = readdirSync(reportsRoot); } catch { return null; }
-  for (const reportNum of reportNumbers) {
-    const reportName = filenames.find((name) => new RegExp(`^0*${reportNum}-.*\\.md$`, 'i').test(name));
-    if (!reportName) continue;
-    let report;
-    try { report = readFileSync(path.join(reportsRoot, reportName), 'utf-8'); } catch { continue; }
-    const match = report.match(/\*\*URL:\*\*[ \t]*(\S+)/);
-    if (!match) continue;
-    const url = match[1].replace(/^<|>$/g, '').replace(/[),.;]+$/, '');
-    if (atsVendorOf(url)) return url;
-  }
-  return null;
+export function reportUrlForNumbers(reportNumbers, reportsRoot, accept = atsVendorOf) {
+  return reportUrlFromReports(reportNumbers, reportsRoot, accept);
 }
 
 export function parseTrackerAtsSeeds(text, { reportsRoot } = {}) {

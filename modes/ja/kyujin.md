@@ -163,7 +163,7 @@ Job posting を分析し、real, active opening かどうかを示す signals �
 - **Niche/executive roles:** Staff+、VP、Director、highly specialized roles は months open でも legitimate。Age thresholds を調整。
 - **Startup / pre-revenue:** Early-stage companies は role が genuinely undefined で JD が vague なことがある。Description vagueness の重みを下げる。
 - **No date available:** Posting age が判断できず、他に concerning signals がない場合、limited data の note 付きで default to "Proceed with Caution"。Evidence なしで "Suspicious" にしない。
-- **Recruiter-sourced (no public posting):** Freshness signals unavailable。Active recruiter contact 自体を positive legitimacy signal として note。
+- **Recruiter-sourced（posting link 付きの recruiter outreach も含む）:** Posting snapshot がない場合のみ Freshness signals unavailable。Recruiter が link した posting を確認した場合は date と Apply button state の findings を残す。Recruiter contact だけでは positive legitimacy signal にならない（Neutral）。Tier を決める前に recruiter の身元を確認する：(a) company 自身の careers page / public ATS board にこの role があるか、(b) 既知 brand に付いた未知の名前は別 entity として確認する、(c) recruiter の email domain または independent source が company とつながるか、(d) `"{name}" scam OR "fake recruiter" OR "fake job"` を 1 回だけ検索、(e) 送られた code の clone / install / run、その code を開いた状態での screen share、Telegram / WhatsApp / Discord への移動、何らかの支払いを求めていないか。(a) は lookup 1 回、(d) は検索 1 回まで。(b)、(c)、(e) は新しい検索をせず、pasted text、(a) と (d) の結果、既存の research だけを使う。Evidence がない check は Unknown（Neutral）とし、Concerning にしない。(a) か (d) が Concerning で、さらに 1 つ Concerning があれば "Suspicious"。この check で tier が "Suspicious" になった場合は、短く non-accusatory な recruiter identity note を付ける：Concerning になった check とその source、company 自身の email domain から role を確認すること、recruiter の code を実行しないこと。Recruiter が送った repository、archive、link は絶対に clone / install / open / execute しない。
 
 ---
 
@@ -340,7 +340,7 @@ Full evaluation を `reports/{###}-{company-slug}-{YYYY-MM-DD}.md` に保存す�
 
 ### 2. Record in tracker
 
-**ALWAYS** record in `data/applications.md`:
+**ALWAYS** record in the tracker. Write a TSV (rule 9 in `_shared.md`) and merge it with `node merge-tracker.mjs`; never write a row into `data/applications.md` by hand. Fields:
 - Next sequential number
 - Current date
 - Company

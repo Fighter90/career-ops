@@ -1,9 +1,23 @@
 import { Radar } from "lucide-react";
+import path from "node:path";
 import { PortalsView } from "@/components/portals-view";
+import { careerOpsRoot } from "@/lib/career-ops";
+import { loadPortalsDocument, watchedCompanies, type WatchedCompany } from "@/lib/portals-config.mjs";
 
 export const dynamic = "force-dynamic";
 
+function readWatched(): { watched: WatchedCompany[]; error: string | null } {
+  const root = careerOpsRoot();
+  try {
+    const { doc, seeded } = loadPortalsDocument(path.join(root, "portals.yml"), path.join(root, "templates", "portals.example.yml"));
+    return { watched: seeded ? [] : watchedCompanies(doc), error: null };
+  } catch (e) {
+    return { watched: [], error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
 export default function PortalsPage() {
+  const { watched, error } = readWatched();
   return (
     <div className="mx-auto max-w-3xl px-6 py-8">
       <div className="flex items-center gap-3">
@@ -17,8 +31,13 @@ export default function PortalsPage() {
       <p className="mt-1.5 text-xs text-faint">
         Backed by <code className="text-muted">portals.yml</code> — edit it directly or ask the assistant.
       </p>
+      {error && (
+        <p role="alert" className="mt-4 rounded-xl border border-rose-500/40 bg-rose-500/10 p-3 text-sm text-rose-600 dark:text-rose-400">
+          Could not read <code>portals.yml</code>: {error}
+        </p>
+      )}
       <div className="mt-6">
-        <PortalsView />
+        <PortalsView watched={watched} />
       </div>
     </div>
   );

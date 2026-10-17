@@ -59,6 +59,7 @@ test('parses header columns when the data root does not contain system files', (
       notes: 'fixture',
       applyLink: '',
       followUp: '',
+      url: '',
     },
   ]);
 });
@@ -87,7 +88,7 @@ for (const [market, date, company, role] of markets) {
     assert.deepEqual(parseApplications(md, root), [{
       n: '41', date: '2026-01-02', company: 'Acme', via: 'Example Agency', role: 'Engineer', location: 'Berlin',
       score: '4.2/5', status: 'Applied', pdf: '✅', report: '[41](reports/041.md)', notes: 'keep this note',
-      applyLink: '', followUp: '',
+      applyLink: '', followUp: '', url: '',
     }]);
   });
 }
@@ -97,6 +98,19 @@ test('headerless tracker keeps data whose cells contain localized header words',
   assert.deepEqual(parseApplications(md, root), [{
     n: '41', date: '2026-01-02', company: 'Firma', via: '', role: 'Rolle', location: '', score: '4.2/5',
     status: 'Applied', pdf: '✅', report: '[41](reports/041.md)', notes: 'Status',
-    applyLink: '', followUp: '',
+    applyLink: '', followUp: '', url: '',
   }]);
+});
+
+test('reads a URL column and returns the href from a markdown link cell', () => {
+  const href = 'https://boards.greenhouse.io/example/jobs/1';
+  const workday = 'https://jobs.example.com/Engineer_(Remote)';
+  const md = `| # | Date | Company | Role | Score | Status | PDF | Report | Notes | URL |
+|---|---|---|---|---|---|---|---|---|---|
+| 7 | 2026-01-02 | Example | Engineer | 4.0/5 | Evaluated | ❌ | [7](reports/007.md) | fixture | [greenhouse](${href}) |
+| 8 | 2026-01-03 | Example | Engineer | 4.0/5 | Evaluated | ❌ | [8](reports/008.md) | fixture | ${href} |
+| 9 | 2026-01-04 | Example | Engineer | 4.0/5 | Evaluated | ❌ | [9](reports/009.md) | fixture | — |
+| 10 | 2026-01-05 | Example | Engineer | 4.0/5 | Evaluated | ❌ | [10](reports/010.md) | fixture | [workday](${workday}) |`;
+  const rows = parseApplications(md, root);
+  assert.deepEqual(rows.map((row) => row.url), [href, href, '—', workday]);
 });

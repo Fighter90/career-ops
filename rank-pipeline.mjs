@@ -33,7 +33,7 @@ import { readFileSync, writeFileSync, existsSync } from 'fs';
 import { execFileSync } from 'child_process';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
-import { flagValue, hasFlag, validateFlags } from './lib/cli-flags.mjs';
+import { flagValue, hasFlag, safeIntFlag, validateFlags } from './lib/cli-flags.mjs';
 import { sanitizeMarkdownField } from './scan.mjs';
 import { withPipelineLock } from './pipeline-lock.mjs';
 import { isMainModule } from './lib/is-main-module.mjs';
@@ -72,7 +72,7 @@ const USAGE = `
   node rank-pipeline.mjs [--limit N] [--cli <name>] [--model <name>] [--dry-run]
 
     --limit N     max entries to rank this run (default ${DEFAULT_LIMIT}, ceiling ${LIMIT_CEILING})
-    --cli <name>  force a CLI instead of auto-detecting
+    --cli <name>  force a CLI instead of $CAREER_OPS_CLI or auto-detection
     --model <n>   passed through to the CLI when it accepts one
     --dry-run     print the annotations, write nothing
     --self-test   run the in-memory suite (no subprocess, no network)
@@ -273,7 +273,24 @@ function callCli(cli, prompt, model) {
     encoding: 'utf-8',
     maxBuffer: 10 * 1024 * 1024,
     timeout: 120_000,
+    stdio: ['ignore', 'pipe', 'pipe'],
   });
+}
+
+const ANSI = /\x1b\[[0-9;]*m/g;
+
+/**
+ * One line saying why a CLI call failed. err.message from execFileSync starts
+ * with "Command failed: <bin> <args>", and the args are the whole prompt (CV
+ * excerpt plus postings), so it is never shown.
+ */
+export function describeCliFailure(err, bin) {
+  if (err?.code === 'ETIMEDOUT') return `${bin} timed out`;
+  if (err?.code === 'ENOENT') return `${bin} not found`;
+  const lines = String(err?.stderr ?? '').replace(ANSI, '').split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  const detail = lines.find(l => /error/i.test(l)) ?? lines.at(-1);
+  const exit = err?.status != null ? `${bin} exited with code ${err.status}` : `${bin} failed`;
+  return detail ? `${exit}: ${detail.slice(0, 200)}` : exit;
 }
 
 async function main(args) {
@@ -283,7 +300,12 @@ async function main(args) {
   }
 
   const dryRun = hasFlag(args, '--dry-run');
-  const limit = flagValue(args, '--limit') ?? DEFAULT_LIMIT;
+  const rawLimit = flagValue(args, '--limit');
+  const limit = safeIntFlag(rawLimit, hasFlag(args, '--limit') ? 0 : DEFAULT_LIMIT);
+  if (limit <= 0 || rawLimit?.trim() !== rawLimit) {
+    console.error('--limit must be a positive integer.');
+    return 1;
+  }
   const model = flagValue(args, '--model');
   const forced = flagValue(args, '--cli') ?? process.env.CAREER_OPS_RANK_CLI;
 
@@ -297,9 +319,10 @@ async function main(args) {
     return 0;
   }
 
+  const active = CLI_CANDIDATES.find(c => c.bin === process.env.CAREER_OPS_CLI);
   const cli = forced
     ? CLI_CANDIDATES.find(c => c.bin === forced) ?? { bin: forced, args: p => ['-p', p] }
-    : detectCli();
+    : detectCli(active ? [active, ...CLI_CANDIDATES] : CLI_CANDIDATES);
   if (!cli) {
     console.error('No supported agent CLI found (tried: %s).', CLI_CANDIDATES.map(c => c.bin).join(', '));
     console.error('Install one, or pass --cli <name>. See the Headless / Batch Mode table in AGENTS.md.');
@@ -326,6 +349,7 @@ async function main(args) {
   // the final summary.
   let attemptedCalls = 0;
   let skippedBatches = 0;
+  let failedCalls = 0;
 
   for (let i = 0; i < selected.length; i += BATCH_SIZE) {
     const batch = selected.slice(i, i + BATCH_SIZE);
@@ -334,8 +358,9 @@ async function main(args) {
     try {
       response = callCli(cli, buildPrompt(batch, cvExcerpt), model);
     } catch (err) {
-      console.error(`  batch ${i / BATCH_SIZE + 1}: CLI call failed (${err.code ?? err.message}) — entries left un-annotated`);
+      console.error(`  batch ${i / BATCH_SIZE + 1}: CLI call failed (${describeCliFailure(err, cli.bin)}), entries left un-annotated`);
       skippedBatches += 1;
+      failedCalls += 1;
       continue;
     }
     const results = parseBatchResponse(response);
@@ -384,6 +409,10 @@ async function main(args) {
   }
   console.log(`  Elapsed: ${elapsed}s`);
   console.log(`  Cost: not reported by \`${cli.bin}\` in headless mode — check your CLI's own usage view.`);
+  if (failedCalls === attemptedCalls) {
+    console.error(`\n  Every call to ${cli.bin} failed. Check that \`${cli.bin}\` works on its own, or pick another CLI with --cli <name>.`);
+    return 1;
+  }
   return 0;
 }
 

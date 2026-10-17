@@ -16,7 +16,7 @@ try {
 import { readFileSync, existsSync } from 'fs';
 import * as yaml from 'js-yaml';
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import { appendToPipeline, appendToScanHistory, loadSeenUrls, PORTALS_PATH } from './scan.mjs';
+import { appendToPipeline, appendToScanHistory, loadSeenUrls, normalizeUrlForDedup, PORTALS_PATH } from './scan.mjs';
 import { localToday } from './lib/local-today.mjs';
 
 // Import the deterministic provider
@@ -116,7 +116,10 @@ async function main() {
     });
 
     for (const job of rawJobs) {
-      if (seen.has(job.url)) continue;
+      // The seen set holds normalizeUrlForDedup() tokens (trailing slash, path
+      // case and tracking params folded), so the posting is looked up the same way.
+      const seenKey = normalizeUrlForDedup(job.url);
+      if (seen.has(seenKey)) continue;
       
       aiCalls++;
       let extracted;
@@ -125,27 +128,28 @@ async function main() {
       } catch (err) {
         aiFailures++;
         if (!firstAiError) firstAiError = `${modelName}: ${err?.message || err}`;
-        seen.add(job.url);
+        seen.add(seenKey);
         continue;
       }
       if (extracted && extracted.company && extracted.title) {
         newOffers.push({ ...job, ...extracted, source: 'hn-hiring', postedAt: Date.now() });
         console.log(`  ✅ AI Match: ${extracted.company}`);
       }
-      seen.add(job.url);
+      seen.add(seenKey);
     }
   } else {
     // STEP 3: Fallback Mode (Deterministic/No-Key)
     console.log(`⚠️ No AI key. Using keyword filtering mode...`);
     for (const job of rawJobs) {
-      if (seen.has(job.url)) continue;
+      const seenKey = normalizeUrlForDedup(job.url);
+      if (seen.has(seenKey)) continue;
 
       const matches = myKeywords.some(k => job.title.toLowerCase().includes(k.toLowerCase()));
       if (matches) {
         newOffers.push({ ...job, source: 'hn-hiring', postedAt: Date.now() });
         console.log(`  ✅ Match: ${job.company}`);
       }
-      seen.add(job.url);
+      seen.add(seenKey);
     }
   }
 

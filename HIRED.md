@@ -15,6 +15,13 @@ nothing leaves your machine until you press Submit yourself).
 
 <!-- ENTRIES -->
 
+<!-- hire n=16 level=handle handle=rldzkl role="Senior Front-End Developer – UI/UX" sector="Energy sector" geo="Jakarta, Indonesia" weeks=12 link="https://github.com/career-ops-hq/career-ops/issues/5118" -->
+### Hire #16
+
+> Tracked the role through three interview rounds to the offer, then used career-ops to check the offer before accepting.
+
+<a href="https://github.com/rldzkl"><img src="https://github.com/rldzkl.png?size=64" width="28" height="28" align="top" alt="@rldzkl"> **@rldzkl**</a> · Senior Front-End Developer – UI/UX · Jakarta, Indonesia · 12 weeks · [story →](https://github.com/career-ops-hq/career-ops/issues/5118)
+
 <!-- hire n=15 level=handle handle=RiyaMathew-11 role="Applied Sciences Intern - ML Team" sector="start-up - scale-up" geo="United Kingdom" weeks=16 link="https://github.com/career-ops-hq/career-ops/issues/4915" -->
 ### Hire #15
 

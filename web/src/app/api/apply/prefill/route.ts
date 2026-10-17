@@ -8,6 +8,7 @@ import { applyCvSource } from "@/lib/apply/cv-source.mjs";
 import { buildAnswerPrompt } from "@/lib/apply/answer-prompt.mjs";
 import { runPlanner } from "@/lib/apply/planner";
 import { extractJsonObject } from "@/lib/extract-json-object.mjs";
+import { readJsonObject } from "@/lib/json-body";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -19,12 +20,8 @@ export const maxDuration = 320;
 // exit code/signal, parse outcome) so a stuck/empty prefill is observable on the
 // page AND written to <root>/.career-ops-web/apply-prefill.log for debugging.
 export async function POST(req: Request) {
-  let body: { sessionId?: string; cliId?: string; company?: string; application?: string };
-  try {
-    body = await req.json();
-  } catch {
-    return Response.json({ error: "bad json" }, { status: 400 });
-  }
+  const body = await readJsonObject<{ sessionId?: string; cliId?: string; company?: string; application?: string }>(req);
+  if (!body) return Response.json({ error: "bad json" }, { status: 400 });
   const { sessionId, cliId: requestedCliId, company, application } = body;
   // Same two identifiers the fill route takes, validated the same way: they
   // reach a filesystem resolver, so a non-string is refused before it gets there.

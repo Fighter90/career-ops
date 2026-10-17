@@ -317,7 +317,7 @@ test('ad hoc --relocation mode: "Hamilton, QC" never false-matches CA-ON either'
 //    form that motivated the CWE-78 finding. ──
 
 test('modes/oferta.md Signal 17 passes the JD location through a file, never --posting-location "<JD', () => {
-  const oferta = readFile('modes/oferta.md');
+  const oferta = readFile('modes/oferta.md') + readFile('modes/oferta-signals/17-relocation-purchasing-power.md');
   assert.match(oferta, /--posting-location-file/, 'Signal 17 uses the safe file-based flag');
   assert.doesNotMatch(oferta, /--posting-location "<JD/, 'the JD-controlled value is never shell-interpolated directly');
 });
@@ -329,7 +329,7 @@ test('batch/batch-prompt.md Signal 17 passes the JD location through a file, nev
 });
 
 test('both Signal 17 prompts annualize only explicit, sufficiently specified compensation periods', () => {
-  for (const path of ['modes/oferta.md', 'batch/batch-prompt.md']) {
+  for (const path of ['modes/oferta-signals/17-relocation-purchasing-power.md', 'batch/batch-prompt.md']) {
     const prompt = readFile(path);
     assert.match(prompt, /monthly[\s\S]{0,80}`midpoint × 12`/, `${path} documents monthly-to-annual conversion`);
     assert.match(prompt, /hourly[\s\S]{0,220}(?:JD states weekly hours|JD's stated weekly hours)/, `${path} requires JD-stated weekly hours for hourly annualization`);
@@ -350,7 +350,7 @@ test('both Signal 17 prompts annualize only explicit, sufficiently specified com
 //    in either prompt file. ──
 
 test('modes/oferta.md Signal 17 no longer uses a heredoc to write the JD location (heredoc delimiter collision, CWE-78 round 2)', () => {
-  const oferta = readFile('modes/oferta.md');
+  const oferta = readFile('modes/oferta.md') + readFile('modes/oferta-signals/17-relocation-purchasing-power.md');
   assert.doesNotMatch(oferta, /<<'?JD_LOCATION_EOF'?/, 'the fixed-delimiter heredoc must be gone, not just renamed');
   assert.doesNotMatch(oferta, /cat <<'/, 'no heredoc of any delimiter name should remain for the posting location');
 });
@@ -362,7 +362,7 @@ test('batch/batch-prompt.md Signal 17 no longer uses a heredoc to write the JD l
 });
 
 test('modes/oferta.md Signal 17 writes the posting-location file via base64-decoded Node, not a shell-interpolated or heredoc-fed value', () => {
-  const oferta = readFile('modes/oferta.md');
+  const oferta = readFile('modes/oferta.md') + readFile('modes/oferta-signals/17-relocation-purchasing-power.md');
   assert.match(oferta, /Buffer\.from\("<base64-encoded JD location/, 'decodes a base64 string literal, never raw JD text');
   assert.match(oferta, /"base64"/, 'uses base64 decoding');
 });
@@ -627,7 +627,7 @@ test('--summary mode renders the relocation line with the not-financial-advice c
 //    header: "NEW TESTS GO IN A FILE OF THEIR OWN") ──
 
 test('modes/oferta.md Block G carries Signal 17 and its Risk Summary row', () => {
-  const oferta = readFile('modes/oferta.md');
+  const oferta = readFile('modes/oferta.md') + readFile('modes/oferta-signals/17-relocation-purchasing-power.md');
   assert.match(oferta, /\*\*17\. Relocation Purchasing Power\*\*/, 'Signal 17 heading present');
   assert.match(oferta, /node salary-gap\.mjs --relocation --gross/, 'Signal 17 instructs running the real CLI, not hand-computing the arithmetic');
   assert.match(oferta, /Not financial or tax advice|not financial or tax advice/i, 'Signal 17 carries the not-financial/tax-advice disclaimer');

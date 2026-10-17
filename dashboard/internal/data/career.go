@@ -147,18 +147,40 @@ func resolveTrackerPath(careerOpsPath string) string {
 		return filepath.Clean(filepath.Join(getRepoRoot(), envTracker))
 	}
 	dataPath := filepath.Clean(filepath.Join(careerOpsPath, "data", "applications.md"))
+	// Fall back ONLY when data/applications.md is genuinely absent. Any other
+	// stat failure means the canonical tracker IS there and could not be
+	// examined, and falling back then sends the reader to a legacy path that
+	// usually does not exist — so a permission error on the real tracker
+	// surfaced as "could not find applications.md", the same mix-up this change
+	// removes one step later in ParseApplications.
 	if _, err := os.Stat(dataPath); err == nil {
+		return dataPath
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		// Returned as the resolved path so the caller's own read reports the
+		// real error against the real file, rather than this function inventing
+		// a second error channel for a path it only computes.
 		return dataPath
 	}
 	return filepath.Clean(filepath.Join(careerOpsPath, "applications.md"))
 }
 
 // ParseApplications reads applications.md and returns parsed applications.
-func ParseApplications(careerOpsPath string) []model.CareerApplication {
+//
+// The error is returned rather than folded into a nil slice because absent and
+// unreadable are different facts and the callers need to tell them apart. A
+// tracker that is not there yet is a first run; one that cannot be opened is
+// the user's whole pipeline being inaccessible, and reporting that as "no
+// applications" both loses the pipeline and makes ComputeProgressMetrics
+// report the search as failing (every rate falls to 0% and renders red).
+//
+// Callers should branch on errors.Is(err, fs.ErrNotExist). Same rule the rest
+// of the project follows for user-layer reads: ENOENT is the only failure that
+// legitimately means empty.
+func ParseApplications(careerOpsPath string) ([]model.CareerApplication, error) {
 	filePath := resolveTrackerPath(careerOpsPath)
 	content, err := os.ReadFile(filePath)
 	if err != nil {
-		return nil
+		return nil, fmt.Errorf("read tracker %s: %w", filePath, err)
 	}
 
 	lines := strings.Split(string(content), "\n")
@@ -255,8 +277,10 @@ func ParseApplications(careerOpsPath string) []model.CareerApplication {
 	// 3. report_num -> batch-state completed mapping (legacy)
 	// 4. scan-history.tsv (pipeline scan entries matched by company+role)
 	// 5. company name fallback from batch-input.tsv
-	batchURLs := loadBatchInputURLs(careerOpsPath)
-	reportNumURLs := loadJobURLs(careerOpsPath)
+	inputPath := batchFilePath(careerOpsPath, "batch-input.tsv")
+	statePath := batchFilePath(careerOpsPath, "batch-state.tsv")
+	batchURLs := loadBatchInputURLs(inputPath)
+	reportNumURLs := loadJobURLs(inputPath, statePath)
 
 	for i := range apps {
 		if apps[i].JobURL != "" {
@@ -303,14 +327,38 @@ func ParseApplications(careerOpsPath string) []model.CareerApplication {
 	enrichFromScanHistory(careerOpsPath, apps)
 
 	// Strategy 5: company name fallback from batch-input.tsv
-	enrichAppURLsByCompany(careerOpsPath, apps)
+	enrichAppURLsByCompany(inputPath, apps)
 
-	return apps
+	return apps, nil
+}
+
+// batchFilePath returns where to read one of batch/batch-runner.sh's files,
+// batch-input.tsv or batch-state.tsv.
+//
+// The runner keeps both beside itself in the checkout, even when
+// CAREER_OPS_ROOT, CAREER_OPS_DATA_DIR or a .career-ops-data marker put the
+// data root somewhere else (#5115, #5116). Reading them only from the data
+// root found nothing under that layout, so rows that rely on the batch tiers
+// lost their job URL. The checkout's copy wins when it exists. Only when it
+// does not exist is the data root's used, which covers files kept there by
+// hand and the case where no checkout can be found. Any other stat error
+// keeps the checkout path, so the read fails instead of picking up an older
+// copy from the data root. In the default layout both are the same file.
+//
+// A FindRepoRoot error is not reported here: main.go already warns about it
+// at startup, and the data root is the path this read used before.
+func batchFilePath(careerOpsPath, name string) string {
+	if root, err := FindRepoRoot(); err == nil && root != "" {
+		checkoutPath := filepath.Join(root, "batch", name)
+		if _, statErr := os.Stat(checkoutPath); !errors.Is(statErr, fs.ErrNotExist) {
+			return checkoutPath
+		}
+	}
+	return filepath.Join(careerOpsPath, "batch", name)
 }
 
 // loadBatchInputURLs reads batch-input.tsv and returns a map of batch ID -> job URL.
-func loadBatchInputURLs(careerOpsPath string) map[string]string {
-	inputPath := filepath.Join(careerOpsPath, "batch", "batch-input.tsv")
+func loadBatchInputURLs(inputPath string) map[string]string {
 	inputData, err := os.ReadFile(inputPath)
 	if err != nil {
 		return nil
@@ -350,9 +398,8 @@ type batchEntry struct {
 // loadJobURLs reads batch TSV files and returns a map of report_num -> job URL.
 // Uses two strategies: (1) report_num mapping for completed jobs, (2) company name
 // matching as fallback for failed/missing jobs.
-func loadJobURLs(careerOpsPath string) map[string]string {
+func loadJobURLs(inputPath, statePath string) map[string]string {
 	// Read batch-input.tsv: id \t url \t source \t notes
-	inputPath := filepath.Join(careerOpsPath, "batch", "batch-input.tsv")
 	inputData, err := os.ReadFile(inputPath)
 	if err != nil {
 		return nil
@@ -396,7 +443,6 @@ func loadJobURLs(careerOpsPath string) map[string]string {
 	}
 
 	// Read batch-state.tsv: id \t url \t status \t ... \t report_num \t ...
-	statePath := filepath.Join(careerOpsPath, "batch", "batch-state.tsv")
 	stateData, err := os.ReadFile(statePath)
 	if err != nil {
 		return nil
@@ -498,8 +544,7 @@ func normalizeCompany(name string) string {
 
 // enrichAppURLsByCompany fills in JobURL for apps that didn't get one via report_num mapping.
 // It matches by company name from batch-input.tsv notes.
-func enrichAppURLsByCompany(careerOpsPath string, apps []model.CareerApplication) {
-	inputPath := filepath.Join(careerOpsPath, "batch", "batch-input.tsv")
+func enrichAppURLsByCompany(inputPath string, apps []model.CareerApplication) {
 	inputData, err := os.ReadFile(inputPath)
 	if err != nil {
 		return
@@ -1004,7 +1049,8 @@ func ComputeProgressMetrics(apps []model.CareerApplication, history ...map[int]i
 			}
 		}
 
-		if norm != "skip" && norm != "rejected" && norm != "discarded" {
+		switch norm {
+		case "applied", "responded", "assessment", "interview", "offer":
 			pm.ActiveApps++
 		}
 	}

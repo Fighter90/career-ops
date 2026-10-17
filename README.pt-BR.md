@@ -20,12 +20,15 @@
   <a href="README.ar.md">العربية</a> |
   <a href="README.hi.md">हिन्दी</a> |
   <a href="README.tr.md">Türkçe</a> |
-  <a href="README.vi.md">Tiếng Việt</a>
+  <a href="README.vi.md">Tiếng Việt</a> |
+  <a href="README.id.md">Bahasa Indonesia</a>
 </p>
+
+<p align="center"><a href="https://career-ops.org/pt/docs?utm_source=readme&utm_content=pt">Documentação completa em português: career-ops.org/pt/docs</a></p>
 
 <!-- The non-breaking spaces (&nbsp;) and word joiners (&#8288;) below decide where each line wraps on a phone. Keep them when editing. -->
 
-<p align="center"><a href="https://github.com/santifer"><img src="docs/avatar-santifer.png" width="48" height="48" align="middle" alt="Santiago Fernández de Valderrama Aparicio"></a>&nbsp;&nbsp;<a href="https://github.com/santifer"><strong>santifer</strong></a></p>
+<p align="center"><a href="https://github.com/santifer"><img src="docs/avatar-santifer.png" width="48" height="48" align="middle" alt="Santiago Fernández de Valderrama Aparicio"></a>&nbsp;&nbsp;Criado por <a href="https://github.com/santifer"><strong>@santifer</strong></a></p>
 
 <p align="center">
 <strong>Meses mandando currículos para o&nbsp;silêncio.</strong><br>
@@ -203,7 +206,7 @@ npx @santifer/career-ops init
 
 > 💡 `npx` vem com o [Node.js](https://nodejs.org): ele roda o instalador uma vez,
 > sem instalar nada globalmente. Ainda não tem Node? Instale primeiro.
-> (Já usa uma CLI Claude Code / Gemini / Codex? Então você já tem.)
+> (Já usa uma CLI Claude Code / Codex? Então você já tem.)
 
 Isso clona a versão mais recente em `./career-ops` e instala as dependências. Depois:
 
@@ -367,7 +370,7 @@ agy
 /career-ops tracker
 ```
 
-A skill é definida com o padrão aberto em `.agents/skills/career-ops/SKILL.md` e vinculada ou referenciada para cada CLI suportada (por exemplo `.claude/`, `.cursor/`, `.qwen/`, `.antigravitycli/`, `.grok/`).
+A skill é definida com o padrão aberto em `.agents/skills/career-ops/SKILL.md` e vinculada ou referenciada para cada CLI suportada (por exemplo `.claude/`, `.qwen/`, `.antigravitycli/`, `.grok/`). O Cursor descobre automaticamente a skill compartilhada em `.agents/skills/`.
 
 ## Integração com Codex
 

@@ -3,7 +3,7 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { skillGapModel, barPct } from "../../src/lib/skill-gaps.mjs";
+import { skillGapModel, barPct, blockerText } from "../../src/lib/skill-gaps.mjs";
 
 const payload = (meta = {}, gaps = null) => ({
   available: true,
@@ -109,4 +109,27 @@ test("bar widths are relative to the heaviest gap shown", () => {
   assert.equal(barPct(heavy[0], heavy), 100);
   assert.equal(barPct(heavy[1], heavy), 50);
   assert.equal(barPct({ skill: "z", weightedScore: NaN }, heavy), 2);
+});
+
+test("skip blockers pass through with the skip count, and malformed rows drop", () => {
+  const base = payload();
+  const people = { label: "People management", kind: "theme", skips: 9, missing: 9, partial: 0, closeCalls: 5, nudge: "learn", reports: [193, 190], wordings: ["Managing managers"] };
+  base.data.skipBlockers = { window: 20, skips: 20, blockers: [people, { label: "", skips: 3 }, { label: "Go", skips: 0 }] };
+  const m = skillGapModel(base);
+  assert.deepEqual(m.blockers, [people]);
+  assert.equal(m.skips, 20);
+
+  const older = skillGapModel(payload());
+  assert.deepEqual([older.blockers, older.skips], [[], 0], "an upskill.mjs without skipBlockers renders no blocker list");
+});
+
+test("a blocker line names the verdict split, the close calls, and the matching nudge", () => {
+  assert.deepEqual(blockerText({ label: "People management", skips: 9, missing: 9, partial: 0, closeCalls: 5, nudge: "learn", reports: [] }), {
+    verdict: "missing in all 9 · 5 scored 3.5 or higher",
+    nudge: "Your CV does not show this. Learn it, or aim at roles that do not ask for it.",
+  });
+  assert.deepEqual(blockerText({ label: "Kubernetes", skips: 3, missing: 1, partial: 2, closeCalls: 0, nudge: "evidence", reports: [] }), {
+    verdict: "missing in 1, partial in 2",
+    nudge: "Your CV shows some of this. If you have done more, add a bullet with the scope and the result.",
+  });
 });

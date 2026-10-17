@@ -20,12 +20,13 @@
   <a href="README.ar.md">العربية</a> |
   <a href="README.hi.md">हिन्दी</a> |
   <a href="README.tr.md">Türkçe</a> |
-  <a href="README.vi.md">Tiếng Việt</a>
+  <a href="README.vi.md">Tiếng Việt</a> |
+  <a href="README.id.md">Bahasa Indonesia</a>
 </p>
 
 <!-- The non-breaking spaces (&nbsp;) and word joiners (&#8288;) below decide where each line wraps on a phone. Keep them when editing. -->
 
-<p align="center"><a href="https://github.com/santifer"><img src="docs/avatar-santifer.png" width="48" height="48" align="middle" alt="Santiago Fernández de Valderrama Aparicio"></a>&nbsp;&nbsp;<a href="https://github.com/santifer"><strong>santifer</strong></a></p>
+<p align="center"><a href="https://github.com/santifer"><img src="docs/avatar-santifer.png" width="48" height="48" align="middle" alt="Santiago Fernández de Valderrama Aparicio"></a>&nbsp;&nbsp;Створено <a href="https://github.com/santifer"><strong>@santifer</strong></a></p>
 
 <p align="center">
 <strong>Місяці надсилання резюме в&nbsp;тишу.</strong><br>
@@ -203,7 +204,7 @@ npx @santifer/career-ops init
 
 > 💡 `npx` іде разом із [Node.js](https://nodejs.org): він запускає інсталятор один раз,
 > нічого не встановлюючи глобально. Ще немає Node? Спершу встановіть його.
-> (Уже користуєтеся CLI Claude Code / Gemini / Codex? Тоді він у вас уже є.)
+> (Уже користуєтеся CLI Claude Code / Codex? Тоді він у вас уже є.)
 
 Це клонує останній реліз у `./career-ops` і встановлює залежності. Потім:
 
@@ -367,7 +368,7 @@ agy
 /career-ops tracker
 ```
 
-Скіл визначено за відкритим стандартом у `.agents/skills/career-ops/SKILL.md` і підключено символічним посиланням або посиланням для кожного підтримуваного CLI (наприклад `.claude/`, `.cursor/`, `.qwen/`, `.antigravitycli/`, `.grok/`).
+Скіл визначено за відкритим стандартом у `.agents/skills/career-ops/SKILL.md` і підключено символічним посиланням або посиланням для кожного підтримуваного CLI (наприклад `.claude/`, `.qwen/`, `.antigravitycli/`, `.grok/`). Cursor автоматично виявляє спільний скіл у `.agents/skills/`.
 
 ## Інтеграція з Codex
 

@@ -15,6 +15,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
+import { readTrackerUrl } from "./posting-url.mjs";
 
 /**
  * Canonical tracker-parse field name → web Application field. The web type
@@ -27,6 +28,7 @@ import path from "node:path";
 const WEB_FIELD = {
   num: "n", date: "date", company: "company", via: "via", role: "role", location: "location",
   score: "score", status: "status", pdf: "pdf", report: "report", notes: "notes",
+  url: "url",
   // The tracker's Apply Link / Follow-up columns (already in the shared alias
   // table) were mapped nowhere, so the web read path silently dropped them.
   applylink: "applyLink", followup: "followUp",
@@ -165,6 +167,17 @@ function emptyRow(pick) {
   return row;
 }
 
+/**
+ * The URL column is stored as `[label](href)` (#3516). Hand the caller the
+ * href. Every other column stays the raw cell, including Apply Link.
+ * @param {string} field
+ * @param {string} raw
+ * @returns {string}
+ */
+function urlCell(field, raw) {
+  return field === "url" ? readTrackerUrl(raw) : raw;
+}
+
 export function parseApplications(md, rootDir, systemRootDir) {
   const lines = md.split("\n");
   const map = detectColumnMap(lines, loadHeaderAliases(rootDir, systemRootDir));
@@ -190,7 +203,7 @@ export function parseApplications(md, rootDir, systemRootDir) {
       // while the emitter dropped it, and Apply Link / Follow-up be resolved
       // by the shared alias table and thrown away the same way. A field the
       // map has no index for reads "", exactly as before.
-      rows.push(emptyRow((k) => at(k)));
+      rows.push(emptyRow((k) => urlCell(k, at(k))));
     } else {
       // Legacy fixed order; tolerate the 8-cell variant where Notes is absent.
       if (!/^\d+$/.test(cells[0])) continue; // header / separator / malformed
@@ -199,7 +212,7 @@ export function parseApplications(md, rootDir, systemRootDir) {
       // fixed layout does not carry (via, location, applyLink, followUp)
       // stays "" without anyone having to remember to write it down.
       const positional = { n, date, company, role, score, status, pdf, report, notes: rest.join(" | ") };
-      rows.push(emptyRow((k) => positional[k] ?? ""));
+      rows.push(emptyRow((k) => urlCell(k, positional[k] ?? "")));
     }
   }
   return rows;

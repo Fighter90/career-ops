@@ -9,7 +9,7 @@ import {
   copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync,
 } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { pass, fail, NODE, ROOT } from './helpers.mjs';
+import { pass, fail, ownRootEnv, NODE, ROOT } from './helpers.mjs';
 
 console.log('\nollama-eval — includes profile.yml and _profile.md in model context (#2488)');
 
@@ -113,7 +113,9 @@ try {
     execFile(
       NODE,
       [join(fixtureRoot, 'ollama-eval.mjs'), '--url', `http://127.0.0.1:${port}`, '--no-save', 'On-site role.'],
-      { timeout: 30000 },
+      // The fixture is its own data root; without this the evaluator reads
+      // the profile from the root the suite pins, not the one written above.
+      { timeout: 30000, env: ownRootEnv() },
       (error, stdout, stderr) => resolve({ error, stdout, stderr }),
     );
   });

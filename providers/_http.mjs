@@ -10,7 +10,7 @@ import {
 } from '../user-agent.mjs';
 import { providerFetchContext, isBlockedAddress, blockedAddressError } from './_ip-guard.mjs';
 import { currentConnectionScope } from './_connection-scope.mjs';
-import { normalizeUrl } from '../url-key.mjs';
+import { normalizeUrl, aggregatorPostingId } from '../url-key.mjs';
 
 /** @typedef {import('./_types.js').Context} Context */
 /** @typedef {import('./_types.js').FetchOptions} FetchOptions */
@@ -26,8 +26,39 @@ import { normalizeUrl } from '../url-key.mjs';
 
 export { BROWSER_LIKE_USER_AGENT, MACOS_BROWSER_LIKE_USER_AGENT };
 
-/** Per-request abort deadline; override per call with `opts.timeoutMs`. */
-const DEFAULT_TIMEOUT_MS = 10_000;
+const MAX_TIMER_MS = 2_147_483_647; // setTimeout rewrites anything above this to 1ms
+
+/**
+ * Resolve the default per-request timeout from the environment.
+ *
+ * 10s suits almost every board, but a provider that returns its whole catalogue
+ * in one response can legitimately need longer, and when it does the abort
+ * surfaces as an unreachable portal rather than as a timeout — so the board
+ * reads as broken instead of slow. Raising the budget is a deployment concern
+ * rather than a code change, so it is read from the environment.
+ *
+ * Unusable values fall back to the default rather than failing a scan at
+ * request time: a typo in an env var should not take the scanner down.
+ *
+ * "Unusable" includes anything outside setTimeout's honored range, not just
+ * values that fail to parse. A delay below 1ms or above 2_147_483_647ms is
+ * silently rewritten to 1ms, so accepting one would abort every request almost
+ * immediately — the failure this variable exists to prevent, arrived at by a
+ * typo instead of a slow board. Falling back is the quieter outcome: a scan at
+ * the 10s default beats a scan where every portal reads as unreachable.
+ *
+ * @param {unknown} raw - Raw env value (CAREER_OPS_HTTP_TIMEOUT_MS).
+ * @param {number} [fallback=10_000] - Value used when `raw` is unusable.
+ * @returns {number} Milliseconds.
+ */
+export function resolveDefaultTimeoutMs(raw, fallback = 10_000) {
+  if (raw === undefined || raw === null || String(raw).trim() === '') return fallback;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed < 1 || parsed > MAX_TIMER_MS) return fallback;
+  return parsed;
+}
+
+const DEFAULT_TIMEOUT_MS = resolveDefaultTimeoutMs(process.env.CAREER_OPS_HTTP_TIMEOUT_MS);
 let proxyAgent;
 let proxySignature;
 
@@ -522,6 +553,10 @@ export function makeHttpCtx(observer) {
     // so a standalone provider receives the same function the core calls rather
     // than importing the file or copying its body (#4218).
     normalizePostingUrl: normalizeUrl,
+    // The requisition id an aggregator URL carries, for the same reason: a
+    // provider that reads LinkedIn or Indeed links gets the extractor the
+    // tracker's merge uses, not a regex of its own that drifts from it.
+    aggregatorPostingId,
   };
   if (!observer) return ctx;
   for (const method of ['fetchJson', 'fetchText', 'fetchResponse']) {

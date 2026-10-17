@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { careerOpsRoot } from "@/lib/career-ops";
 import { atomicWriteWithBackup } from "@/lib/core/safe-write";
+import { readJsonObject } from "@/lib/json-body";
 
 function cvPath() {
   return path.join(careerOpsRoot(), "cv.md");
@@ -19,12 +20,8 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
-  let body: { content?: string };
-  try {
-    body = await req.json();
-  } catch {
-    return NextResponse.json({ error: "bad json" }, { status: 400 });
-  }
+  const body = await readJsonObject<{ content?: string }>(req);
+  if (!body) return NextResponse.json({ error: "bad json" }, { status: 400 });
   if (typeof body.content !== "string") {
     return NextResponse.json({ error: "content required" }, { status: 400 });
   }

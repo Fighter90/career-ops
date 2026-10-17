@@ -1,6 +1,6 @@
 {
   "name": "career-ops",
-  "version": "1.36.0",
+  "version": "1.37.0",
   "description": "Open-source AI job search that runs locally in your AI coding CLI: scan job portals, evaluate listings into a structured A-H report with a 1-5 score, tailor your CV, track applications",
   "private": true,
   "engines": {
@@ -81,7 +81,7 @@
     "application:init": "node application-artifacts.mjs --init",
     "build:dashboard": "node build-dashboard.mjs",
     "serve:dashboard": "cd dashboard && go run .",
-    "postinstall": "npx playwright install chromium || npx playwright install chromium",
+    "postinstall": "node -e \"process.exit(['','0','false'].includes((process.env.PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD||'').toLowerCase())?1:0)\" || npx playwright install chromium || npx playwright install chromium",
     "manifesto": "node manifesto.mjs"
   },
   "keywords": [

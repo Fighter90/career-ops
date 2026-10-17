@@ -24,6 +24,7 @@ import {
 import { cn } from "@/lib/cn";
 import { FollowupsTableRowsSkeleton } from "@/components/page-loading-skeletons";
 import { startRouteProgress } from "@/components/route-progress";
+import { selectUpcomingFollowups } from "@/lib/core/followup-view.mjs";
 
 // The /followups tracker: WHO needs a nudge today, HOW urgent, WHEN the next
 // touch is due, and the permanent history of every follow-up sent. The verdict
@@ -79,6 +80,7 @@ type CadenceResponse = {
   available: boolean;
   metadata: CadenceMetadata | null;
   entries: CadenceEntry[];
+  upcoming?: CadenceEntry[];
 };
 
 export function FollowupsView() {
@@ -138,6 +140,11 @@ export function FollowupsView() {
   );
 
   const entries = useMemo(() => (data?.available ? data.entries : []), [data]);
+  const upcoming = useMemo(() => {
+    if (!data?.available) return [];
+    if (Array.isArray(data.upcoming)) return data.upcoming;
+    return selectUpcomingFollowups(data.entries);
+  }, [data]);
   const meta = data?.available ? data.metadata : null;
 
   const filtering = tab !== "ALL" || q.trim().length > 0;
@@ -298,6 +305,24 @@ export function FollowupsView() {
             </tbody>
           </table>
         </div>
+      )}
+
+      {data?.available && upcoming.length > 0 && (
+        <section className="mt-8">
+          <h2 className="text-sm font-semibold uppercase tracking-[0.16em] text-muted">Upcoming</h2>
+          <p className="mt-1 text-xs text-faint">These have a next date and are not due yet.</p>
+          <ul className="mt-3 divide-y divide-border rounded-2xl border border-border">
+            {upcoming.map((entry) => (
+              <li key={entry.num} className="flex flex-wrap items-baseline justify-between gap-2 px-4 py-3 text-sm">
+                <Link href={`/pipeline/${entry.num}`} className="font-medium text-foreground hover:text-brand">
+                  {entry.company}
+                  {entry.role ? <span className="font-normal text-muted"> · {entry.role}</span> : null}
+                </Link>
+                <span className="tabular-nums text-faint">{entry.nextFollowupDate}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
       )}
 
       {/* Below the due list: a follow-up you can still send outranks a company

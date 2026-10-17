@@ -93,6 +93,7 @@ function runLoop({ invoke, dir }, { cap = 300, retries = 0, max = 2, log = '429'
     MAX_RETRIES=${max}
     CLI=${cli}
     PAUSE_FILE=pause.tsv
+    THROTTLE_FILE=throttle.marker
     BATCH_PAUSED=false
     calls=0
     claude() {

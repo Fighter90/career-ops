@@ -22,7 +22,7 @@ import { mkdtempSync, writeFileSync, readFileSync, existsSync, rmSync, mkdirSync
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { execFileSync } from 'child_process';
-import { collectSeenUrls, collectSeenCompanyRoles, unrecordedOffers } from '../scan.mjs';
+import { collectSeenUrls, collectSeenCompanyRoles, unrecordedOffers, shouldDedupScanHistoryRow } from '../scan.mjs';
 
 console.log('\nscan.mjs — location- and age-filtered offers are recorded in scan-history.tsv');
 
@@ -185,6 +185,20 @@ const BLOCKED = 'https://boards.example.com/fixture/2002';
   }
 }
 
+// 1d. A skipped_no_apply_control row pins nothing, so a later --verify scan
+// drops the same posting again. That repeat must not append a second row.
+{
+  const header = 'url\tfirst_seen\tportal\ttitle\tcompany\tstatus\n';
+  const history = header + 'https://a.example.com/4\t2026-09-01\tp\tRole\tCo\tskipped_no_apply_control\n';
+  const droppedAgain = [{ url: 'https://a.example.com/4' }, { url: 'https://a.example.com/5' }];
+  const kept = unrecordedOffers(droppedAgain, 'skipped_no_apply_control', history).map((o) => o.url);
+  if (JSON.stringify(kept) === JSON.stringify(['https://a.example.com/5'])) {
+    pass('a posting dropped again for no Apply control is not recorded twice');
+  } else {
+    fail(`repeat no-apply-control drop kept ${JSON.stringify(kept)}, want only the new URL`);
+  }
+}
+
 // 2. --dry-run writes nothing, the same as every other history write.
 {
   const { dir, portals } = makeLane();
@@ -209,11 +223,13 @@ const BLOCKED = 'https://boards.example.com/fixture/2002';
   const LOC = 'https://boards.example.com/fixture/3001';
   const AGE = 'https://boards.example.com/fixture/3002';
   const DEAD = 'https://boards.example.com/fixture/3003';
+  const NOAPPLY = 'https://boards.example.com/fixture/3004';
   const scanHistoryText = [
     HEADER,
     `${LOC}\t2026-01-01\tlocal-parser\tAnalyst\tFixture\tskipped_location\tBengaluru, India`,
     `${AGE}\t2026-01-01\tlocal-parser\tEngineer\tFixture\tskipped_age\tBerlin, Germany`,
     `${DEAD}\t2026-01-01\tlocal-parser\tManager\tFixture\tskipped_expired\tBerlin, Germany`,
+    `${NOAPPLY}\t2026-01-01\tlocal-parser\tDeveloper\tFixture\tskipped_no_apply_control\tBerlin, Germany`,
     '',
   ].join('\n');
 
@@ -223,6 +239,12 @@ const BLOCKED = 'https://boards.example.com/fixture/2002';
     pass('skipped_location and skipped_age pin nothing — a widened threshold hands the posting back');
   } else {
     fail(`config-rejected rows pinned their URLs (location: ${seen.has(LOC)}, age: ${seen.has(AGE)})`);
+  }
+
+  if (!seen.has(NOAPPLY) && !shouldDedupScanHistoryRow({ firstSeen: '2026-01-01', status: 'skipped_no_apply_control' })) {
+    pass('skipped_no_apply_control pins nothing — a page the check could not read is verified again');
+  } else {
+    fail('skipped_no_apply_control still pins its URL, so a live posting is dropped for good');
   }
 
   if (seen.has(DEAD)) {

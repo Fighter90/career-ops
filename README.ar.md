@@ -20,12 +20,13 @@
   <a href="README.ar.md">العربية</a> |
   <a href="README.hi.md">हिन्दी</a> |
   <a href="README.tr.md">Türkçe</a> |
-  <a href="README.vi.md">Tiếng Việt</a>
+  <a href="README.vi.md">Tiếng Việt</a> |
+  <a href="README.id.md">Bahasa Indonesia</a>
 </p>
 
 <!-- The non-breaking spaces (&nbsp;) and word joiners (&#8288;) below decide where each line wraps on a phone. Keep them when editing. -->
 
-<p align="center"><a href="https://github.com/santifer"><img src="docs/avatar-santifer.png" width="48" height="48" align="middle" alt="Santiago Fernández de Valderrama Aparicio"></a>&nbsp;&nbsp;<a href="https://github.com/santifer"><strong>santifer</strong></a></p>
+<p align="center"><a href="https://github.com/santifer"><img src="docs/avatar-santifer.png" width="48" height="48" align="middle" alt="Santiago Fernández de Valderrama Aparicio"></a>&nbsp;&nbsp;أنشأه <a href="https://github.com/santifer"><strong>@santifer</strong></a></p>
 
 <p align="center" dir="rtl">
 <strong>أشهر من إرسال السير الذاتية إلى&nbsp;الصمت.</strong><br>
@@ -203,7 +204,7 @@ npx @santifer/career-ops init
 
 > 💡 `npx` يأتي مع [Node.js](https://nodejs.org): يشغّل المثبّت مرة واحدة
 > دون تثبيت أي شيء بشكل عام. لا يوجد Node بعد؟ ثبّته أولًا.
-> (تستخدم بالفعل واجهة Claude Code / Gemini / Codex؟ إذن لديك بالفعل.)
+> (تستخدم بالفعل واجهة Claude Code / Codex؟ إذن لديك بالفعل.)
 
 يستنسخ هذا أحدث إصدار في `./career-ops` ويثبّت الاعتماديات. ثم:
 
@@ -367,7 +368,7 @@ agy
 /career-ops tracker
 ```
 
-المهارة معرّفة وفق المعيار المفتوح في `.agents/skills/career-ops/SKILL.md` ومربوطة برابط رمزي أو مُشار إليها لكل واجهة مدعومة (مثل `.claude/` و`.cursor/` و`.qwen/` و`.antigravitycli/` و`.grok/`).
+المهارة معرّفة وفق المعيار المفتوح في `.agents/skills/career-ops/SKILL.md` ومربوطة برابط رمزي أو مُشار إليها لكل واجهة مدعومة (مثل `.claude/` و`.qwen/` و`.antigravitycli/` و`.grok/`). يكتشف Cursor المهارة المشتركة تلقائيًا في `.agents/skills/`.
 
 ## تكامل Codex
 

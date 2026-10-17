@@ -21,6 +21,11 @@ function runDoctor(cwd, args, env) {
   // precedence scenarios below. Delete it so each scenario controls the CLI
   // explicitly (default → claude, or the --cli/env/.env value it supplies).
   delete baseEnv.CAREER_OPS_CLI;
+  // Same hermetic reasoning for the OpenCode runtime marker: a suite run from
+  // inside OpenCode exports OPENCODE=1, which resolveActiveCli now reads as
+  // source='auto' → opencode on the default path. Scenarios that WANT the
+  // marker pass it explicitly via env.
+  delete baseEnv.OPENCODE;
   try {
     const out = execFileSync(NODE, [DOCTOR, '--json', '--target', cwd, ...args], {
       cwd,

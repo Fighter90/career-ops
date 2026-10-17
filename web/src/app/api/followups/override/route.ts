@@ -4,6 +4,7 @@ import { atomicWrite } from "@/lib/core/safe-write";
 import { isRealISODate, localISODate } from "@/lib/followups";
 import { parseFollowupId } from "@/lib/followup-id.mjs";
 import { followupsLogPath, withFollowupsWrite, followupsWriteError } from "@/lib/followups-server";
+import { readJsonObject } from "@/lib/json-body";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -24,12 +25,8 @@ const isPinFor = (line: string, appNum: number) => {
 };
 
 export async function POST(req: Request) {
-  let body: { appNum?: string | number; date?: string };
-  try {
-    body = (await req.json()) as typeof body;
-  } catch {
-    return Response.json({ error: "bad json" }, { status: 400 });
-  }
+  const body = await readJsonObject<{ appNum?: string | number; date?: string }>(req);
+  if (!body) return Response.json({ error: "bad json" }, { status: 400 });
   const appNum = parseFollowupId(body.appNum);
   if (appNum === null) {
     return Response.json({ error: "appNum (application #) required" }, { status: 400 });
@@ -60,12 +57,8 @@ export async function POST(req: Request) {
 
 // Clear the pin for an application (the computed cadence takes over again).
 export async function DELETE(req: Request) {
-  let body: { appNum?: string | number };
-  try {
-    body = (await req.json()) as typeof body;
-  } catch {
-    return Response.json({ error: "bad json" }, { status: 400 });
-  }
+  const body = await readJsonObject<{ appNum?: string | number }>(req);
+  if (!body) return Response.json({ error: "bad json" }, { status: 400 });
   const appNum = parseFollowupId(body.appNum);
   if (appNum === null) {
     return Response.json({ error: "appNum (application #) required" }, { status: 400 });

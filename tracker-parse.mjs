@@ -12,7 +12,8 @@
  * leading pipe, so the first real column ("#"/num) is index 1.
  */
 
-import { readFileSync } from 'fs';
+import { existsSync, readFileSync, readdirSync } from 'fs';
+import { join } from 'path';
 
 /** The original fixed 9-column layout (num … notes at indices 1 … 9). */
 export const LEGACY_COLMAP = {
@@ -61,6 +62,21 @@ export const SCORE_CELL_RE = /^\d+(?:\.\d+)?\/5$/;
 export function looksLikeScoreCell(v) {
   const t = String(v ?? '').replace(/\*\*/g, '').trim();
   return SCORE_CELL_RE.test(t) || t === 'N/A' || t === 'DUP' || t === '—' || t === '-';
+}
+
+/**
+ * Parse numeric score from a Score cell string.
+ *
+ * Extracts the first number (including decimals), stripping markdown bold syntax.
+ * Normalizes European decimal comma to dot. Returns 0 when no numeric value is
+ * present, preserving the documented tracker 'no score' sentinel (#2803).
+ *
+ * @param {string} [s] - Raw score cell such as `4.2/5` or `**4.2/5**`.
+ * @returns {number} Parsed score, or 0 when no numeric value is present.
+ */
+export function parseScore(s) {
+  const m = String(s ?? '').replace(/\*\*/g, '').match(/(\d+(?:[.,]\d+)?)/);
+  return m ? parseFloat(m[1].replace(',', '.')) : 0;
 }
 
 /**
@@ -585,6 +601,17 @@ export function extractTrackerReportNumbers(reportCell, notesCell = '') {
   return [...numbers];
 }
 
+export function linkedReportNumbers(reportCell, notesCell) {
+  const link = String(reportCell ?? '').match(/\[([^\]]*)\]\(([^)]+)\)/);
+  if (!link) return extractTrackerReportNumbers(reportCell, notesCell);
+  // Reuse the tracker's canonical local-target validation. It rejects HTTP(S)
+  // and protocol-relative links, and returns both numbers on a label/target
+  // mismatch. Exactly one number therefore proves a local, self-consistent
+  // report link. A present-but-invalid link must not fall back to Notes.
+  const validated = extractTrackerReportNumbers(reportCell);
+  return validated.length === 1 ? validated : [];
+}
+
 /**
  * Report links inside a free-form Notes cell.
  *
@@ -702,4 +729,40 @@ export function normalizeTextKey(value, separator = '') {
     .replace(/̇/gu, '')
     .replace(/[^\p{L}\p{M}\p{N}]+/gu, separator)
     .trim();
+}
+
+/**
+ * Strip trailing punctuation and a markdown autolink wrapper from a raw
+ * `**URL:**` token. Punctuation first: `<https://…/job>,` must become the bare
+ * URL, not `https://…/job>` (angle-first leaves the `>` when a comma follows).
+ *
+ * @param {string} token
+ * @returns {string}
+ */
+export function unwrapReportUrlToken(token) {
+  return String(token).replace(/[),.;]+$/, '').replace(/^<|>$/g, '');
+}
+
+/**
+ * The posting URL recorded in the first of `reportNumbers` whose report file in
+ * `reportsRoot` has a `**URL:**` line that `accept` takes. Lives here, not in
+ * history-ats-seeds.mjs, because liveness-core.mjs needs it and the web app
+ * loads liveness-core: it must not pull in tracker-utils.mjs and its npm
+ * dependencies, which the web install does not have.
+ */
+export function reportUrlForNumbers(reportNumbers, reportsRoot, accept) {
+  if (!reportsRoot || !existsSync(reportsRoot) || reportNumbers.length === 0) return null;
+  let filenames;
+  try { filenames = readdirSync(reportsRoot); } catch { return null; }
+  for (const reportNum of reportNumbers) {
+    const reportName = filenames.find((name) => new RegExp(`^0*${reportNum}-.*\\.md$`, 'i').test(name));
+    if (!reportName) continue;
+    let report;
+    try { report = readFileSync(join(reportsRoot, reportName), 'utf-8'); } catch { continue; }
+    const match = report.match(/\*\*URL:\*\*[ \t]*(\S+)/);
+    if (!match) continue;
+    const url = unwrapReportUrlToken(match[1]);
+    if (accept(url)) return url;
+  }
+  return null;
 }

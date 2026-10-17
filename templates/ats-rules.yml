@@ -53,7 +53,7 @@ rules:
     kinds: [cv]
     source:
       - 'Standard headers: "Professional Summary", "Work Experience", "Education", "Skills", "Certifications", "Projects"'
-      - 'Optional sections (Core Competencies, Work Experience, Projects, Education, Certifications, Awards & Honors, Skills) are dropped entirely — header included — when their array is empty or absent'
+      - 'Optional sections (Professional Summary, Core Competencies, Work Experience, Projects, Education, Certifications, Awards & Honors, Skills) are dropped entirely — header included — when their array is empty or absent, or for Professional Summary when its text is empty or whitespace-only'
     # Every name below appears inside the quotes above; the test asserts it, so
     # this list cannot grow a header the doc does not sanction.
     headers:

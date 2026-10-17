@@ -853,11 +853,10 @@ async function main() {
     return;
   }
 
-  // requireOperand above catches a bare `--file` (nothing follows) and
-  // `--file --anotherflag` (the next token looks like a flag), but not
-  // `--file=` — an explicit empty value after `=` is a single token
-  // (`--file=`) that never matches the bare `--file` requireOperand checks
-  // for, so it would otherwise reach resolve('') the same way.
+  // requireOperand above catches a bare `--file` (nothing follows),
+  // `--file --anotherflag` (the next token looks like a flag), and
+  // `--file=` (empty value in equals form, #5127). Keep this check as
+  // defense-in-depth so an empty path never reaches resolve('') the same way.
   const fileArg = flagValue(args, '--file');
   if (hasFlag(args, '--file') && !fileArg) {
     console.error('Error: --file requires a value');

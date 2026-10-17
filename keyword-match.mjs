@@ -23,6 +23,7 @@ import { readFileSync, existsSync, statSync  } from 'fs';
 import { join, isAbsolute, basename } from 'path';
 import { isMainModule } from './lib/is-main-module.mjs';
 import { getCareerOpsRoot } from './path-resolver.mjs';
+import { extractSkills } from './skill-extract.mjs';
 
 /**
  * Small, deliberately conservative map of interchangeable ATS surface forms.
@@ -267,6 +268,26 @@ export function extractKeywords(reportText) {
 }
 
 /**
+ * The report's archived job description: the text under
+ * `## Job Description (archived verbatim)` up to the next level-2 heading, or
+ * the `jds/` file that section points to (modes/oferta.md, JD archival).
+ *
+ * @param {string} reportText - Full report markdown.
+ * @param {string} root - Directory that holds `jds/`.
+ * @returns {string} The JD text, or '' when the report has no archive.
+ */
+export function archivedJdText(reportText, root) {
+  const m = /^## Job Description\b[^\n]*\n([\s\S]*?)(?=^##\s|(?![\s\S]))/m.exec(String(reportText || ''));
+  if (!m) return '';
+  const section = m[1].trim();
+  if (!/^See jds\/\S+ for the full archive\b/.test(section)) return m[1];
+  const pointer = /^See (jds\/[A-Za-z0-9][\w.-]*) for the full archive\b/.exec(section);
+  if (!pointer) return '';
+  const jdPath = join(root, pointer[1]);
+  return existsSync(jdPath) ? readFileSync(jdPath, 'utf-8') : '';
+}
+
+/**
  * Strip HTML to plain text (zero-dependency) so a tailored CV emitted as HTML
  * (e.g. /tmp/cv-{candidate}-{company}.html from pdf mode) can be scanned as the
  * final, sent document. Removes script/style blocks, drops tags, and decodes
@@ -304,7 +325,7 @@ export function htmlToText(html) {
  * @param {string} [sourceLabel] - Human label for the scanned document.
  * @returns {string} Markdown block.
  */
-export function formatCoverageMarkdown(result, sourceLabel) {
+export function formatCoverageMarkdown(result, sourceLabel, keywordNote) {
   const { coveragePct, presentCount, total, present, thin, missing } = result;
   const out = [
     '## Keyword Coverage',
@@ -313,6 +334,7 @@ export function formatCoverageMarkdown(result, sourceLabel) {
     '',
   ];
   if (sourceLabel) out.push(`_Scanned: ${sourceLabel}._`, '');
+  if (keywordNote) out.push(`_${keywordNote}_`, '');
   out.push(`**Present (${present.length}):** ${present.join(', ') || '—'}`, '');
   if (thin.length) {
     out.push(`**Thin — mentioned once, consider reinforcing (${thin.length}):** ${thin.join(', ')}`, '');
@@ -427,11 +449,25 @@ if (isMainModule(import.meta.url)) {
       process.exit(1);
     }
 
-    const keywords = extractKeywords(reportText);
+    let keywords = extractKeywords(reportText);
+    let keywordSource = 'report';
+    let keywordNote = null;
 
     if (keywords.length === 0) {
-      console.error('No "## Keywords extracted" block found (or it is empty).');
-      process.exit(1);
+      keywords = [...extractSkills(archivedJdText(reportText, getCareerOpsRoot()))].sort();
+      if (keywords.length === 0) {
+        console.error(
+          'No "## Keywords extracted" block found (or it is empty), and no known skills were found under ' +
+          '"## Job Description (archived verbatim)". Add the 15-20 keyword section to the report and rerun.');
+        process.exit(1);
+      }
+      keywordSource = 'archived-jd';
+      keywordNote =
+        `Keywords: ${keywords.length} taken from the archived job description, because the report has no ` +
+        'keyword section. Only names in the skill vocabulary are found, so add the 15-20 keyword section to the report.';
+      console.error(
+        `⚠️  ${reportArg} has no "## Keywords extracted" section. Scoring ${keywords.length} skills read from the archived ` +
+        'job description instead. Tell the user, and add the keyword section to the report.');
     }
 
     const cvPath = cvArg
@@ -454,6 +490,8 @@ if (isMainModule(import.meta.url)) {
     const sourceLabel = cvArg ? basename(cvPath) : 'cv.md (base CV, before per-role tailoring)';
 
     const result = analyzeCoverage(keywords, cvText);
-    console.log(jsonMode ? JSON.stringify(result, null, 2) : formatCoverageMarkdown(result, sourceLabel));
+    console.log(jsonMode
+      ? JSON.stringify({ ...result, keywordSource }, null, 2)
+      : formatCoverageMarkdown(result, sourceLabel, keywordNote));
   }
 }
