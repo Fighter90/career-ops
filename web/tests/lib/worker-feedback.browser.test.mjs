@@ -6,9 +6,10 @@ import http from "node:http";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { test } from "node:test";
+import { liveServerSkip } from "../helpers/live-server.mjs";
 
 const url = process.env.WORKER_FEEDBACK_TEST_URL;
-test("workers expose task-specific state and notify once without moving focus", { skip: !url, timeout: 120_000 }, async () => {
+test("workers expose task-specific state and notify once without moving focus", { skip: liveServerSkip("WORKER_FEEDBACK_TEST_URL"), timeout: 120_000 }, async () => {
   const parsed = new URL(url);
   assert.ok(["localhost", "127.0.0.1", "[::1]"].includes(parsed.hostname));
   const origin = parsed.origin;
@@ -249,7 +250,7 @@ test("workers expose task-specific state and notify once without moving focus", 
 });
 
 // Settled fictional history exercises the shared control without starting jobs.
-test("worker dismiss stays discoverable without hover and by keyboard", { skip: !url, timeout: 60_000 }, async (t) => {
+test("worker dismiss stays discoverable without hover and by keyboard", { skip: liveServerSkip("WORKER_FEEDBACK_TEST_URL"), timeout: 60_000 }, async (t) => {
   const origin = new URL(url);
   assert.ok(["localhost", "127.0.0.1", "[::1]"].includes(origin.hostname));
   const { chromium } = await import("playwright-core");

@@ -25,7 +25,7 @@ import { fileURLToPath } from 'url';
 import { loadYaml } from './lib/yaml-document.mjs';
 import { localToday } from './lib/local-today.mjs';
 import { resolveColumns, parseTrackerRow } from './tracker-parse.mjs';
-import { normalizeStatus, analyzeFromContent } from './followup-cadence.mjs';
+import { normalizeStatus, analyzeFromContent, loadFollowupsEnabled } from './followup-cadence.mjs';
 import { getCareerOpsRoot, resolveTrackerPath } from './path-resolver.mjs';
 import { isMainModule } from './lib/is-main-module.mjs';
 import { parseStatusLogStages, recoverFunnelStages } from './funnel-stages.mjs';
@@ -691,7 +691,7 @@ export function computeAllStats({
 }
 
 /** Human-readable table. pdfPct/reportPct are JSON-only by design — no job-search decision follows from them. */
-function printSummary(stats) {
+function printSummary(stats, { followupsEnabled = true } = {}) {
   const line = '━'.repeat(45);
   console.log(`\n${line}`);
   console.log(`Pipeline Stats — ${stats.metadata.generatedAt}`);
@@ -732,7 +732,9 @@ function printSummary(stats) {
     console.log('Portals:    — no data (portals.yml missing)');
   }
   const fu = stats.followups;
-  if (fu) {
+  if (!followupsEnabled) {
+    console.log('Follow-ups: turned off (follow_ups.enabled: false in config/profile.yml)');
+  } else if (fu) {
     console.log(`Follow-ups: ${fu.totalFollowups} sent across ${fu.appsWithFollowups} apps | ${fu.appliedWithoutFollowup} Applied apps with none | avg ${fu.avgPerApp}/app`);
   } else {
     console.log('Follow-ups: — no data (data/follow-ups.md missing)');
@@ -783,6 +785,6 @@ if (isMainModule(import.meta.url)) {
   validateFlags(args, KNOWN_FLAGS, USAGE);
 
   const stats = computeAllStats({ prune: args.includes('--prune') });
-  if (args.includes('--summary')) printSummary(stats);
+  if (args.includes('--summary')) printSummary(stats, { followupsEnabled: loadFollowupsEnabled() });
   else console.log(JSON.stringify(stats, null, 2));
 }

@@ -55,6 +55,7 @@ export const PATHS = {
   //
   // gemini-eval.mjs:89 and ollama-eval.mjs:56 both already use DATA_ROOT here.
   profile:     join(DATA_ROOT, 'modes', '_profile.md'),
+  custom:      join(DATA_ROOT, 'modes', '_custom.md'),
   profileYml:  getProfilePath(),
   reports:     join(DATA_ROOT, 'reports'),
   // DATA_ROOT, matching gemini-eval.mjs:93. These TSVs are the batch's OUTPUT —
@@ -136,6 +137,14 @@ function loadContext() {
   const cvContent      = readFile(PATHS.cv, 'cv.md');
   const profileContent = readFile(PATHS.profile, '_profile.md');
   const profileYml     = readFile(PATHS.profileYml, 'profile.yml');
+  // _custom.md is optional: an absent file is a valid end state, so no warning.
+  const customContent  = existsSync(PATHS.custom) ? readFileSync(PATHS.custom, 'utf-8').trim() : '';
+  const customSection  = customContent ? `
+═══════════════════════════════════════════════════════
+USER HOUSE RULES & SCORING RULES (_custom.md)
+═══════════════════════════════════════════════════════
+${customContent}
+` : '';
 
   systemPromptTemplate = `You are career-ops, an AI-powered job search assistant.
 You evaluate job offers against the user's CV using a structured A-G scoring system.
@@ -164,7 +173,7 @@ ${profileYml}
 USER ARCHETYPES & NARRATIVE (_profile.md)
 ═══════════════════════════════════════════════════════
 ${profileContent}
-
+${customSection}
 ═══════════════════════════════════════════════════════
 IMPORTANT OPERATING RULES FOR THIS CLI SESSION
 ═══════════════════════════════════════════════════════

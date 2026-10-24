@@ -65,6 +65,7 @@ test('aggregator hosts name no company', () => {
   // "recruiting" is dropped as a careers subdomain, so without the aggregator
   // entry this host would read as a company called "paylocity".
   assert.equal(companyFromHost('recruiting.paylocity.com'), null);
+  assert.equal(companyFromHost('join.com'), null);
 });
 
 test('a bare word is not a host', () => {

@@ -8,7 +8,8 @@
     "build": "next build",
     "start": "node server.mjs start",
     "typecheck": "tsc --noEmit",
-    "test": "node --experimental-strip-types --test \"tests/**/*.test.mjs\""
+    "test": "node --experimental-strip-types --test \"tests/**/*.test.mjs\"",
+    "test:browser": "node tests/browser-suites.mjs"
   },
   "engines": {
     "node": ">=22.6.0"

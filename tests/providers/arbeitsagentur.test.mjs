@@ -277,6 +277,124 @@ try {
     fail(`aa.fetch() Pass B failure dropped primary: ${JSON.stringify(passBFail)}`);
   }
 
+  // angebotsart: default ARBEIT only; a list queries each type and merges.
+  const { parseAngebotsart } = arbeitsagenturModule;
+  if (JSON.stringify(parseAngebotsart(undefined)) === '["1"]'
+      && JSON.stringify(parseAngebotsart([1, 34, '34', 99])) === '["1","34"]'
+      && JSON.stringify(parseAngebotsart('bogus')) === '["1"]') {
+    pass('parseAngebotsart() defaults to ["1"], dedupes, and drops unknown codes');
+  } else {
+    fail('parseAngebotsart() did not normalize offer types');
+  }
+  const seenArts = [];
+  const byArt = await aa.fetch(
+    { name: 'AA', arbeitsagentur: { keywords: ['ESG'], wo: 'Bochum', angebotsart: [1, 34] } },
+    { fetchJson: async (url, opts) => {
+        if (opts?.redirect !== 'error') throw new Error(`redirect must be 'error', got ${opts?.redirect}`);
+        const art = new URL(url).searchParams.get('angebotsart');
+        seenArts.push(art);
+        return art === '34' ? page(v6('P', 'Werkstudent ESG', 'Bochum')) : page(v6('J', 'ESG Analyst', 'Bochum'));
+      } },
+  );
+  if (seenArts.join(',') === '1,34' && byArt.length === 2) {
+    pass('aa.fetch() queries each configured angebotsart and merges the results');
+  } else {
+    fail(`aa.fetch() angebotsart list: arts=${seenArts} jobs=${JSON.stringify(byArt)}`);
+  }
+
+  // One offer type failing must not discard the other type's results.
+  const oneTypeFailed = await aa.fetch(
+    { name: 'AA', arbeitsagentur: { keywords: ['ESG'], wo: 'Bochum', angebotsart: [1, 34] } },
+    { fetchJson: async (url) => {
+        if (new URL(url).searchParams.get('angebotsart') === '34') throw new Error('HTTP 404');
+        return page(v6('J', 'ESG Analyst', 'Bochum'));
+      } },
+  );
+  if (oneTypeFailed.length === 1 && oneTypeFailed[0].url.endsWith('J')) {
+    pass('aa.fetch() keeps a successful offer type when another type fails');
+  } else {
+    fail(`aa.fetch() partial angebotsart failure: ${JSON.stringify(oneTypeFailed)}`);
+  }
+
+  // Filter-mode pages are paced across offer types and retried on 429.
+  const sleeps = [];
+  const filterArts = [];
+  let tripped = false;
+  const paced = await aa.fetch(
+    { name: 'AA', arbeitsagentur: { keywords: ['ESG'], wo: 'Bochum', remoteNationwide: true, remoteMatch: 'filter', angebotsart: [1, 34], size: 1, remoteMaxPages: 2 } },
+    {
+      sleep: async (ms) => { sleeps.push(ms); },
+      fetchJson: async (url) => {
+        const sp = new URL(url).searchParams;
+        if (!sp.has('homeoffice')) return page();
+        if (!tripped && sp.get('angebotsart') === '34') {
+          tripped = true;
+          throw Object.assign(new Error('HTTP 429'), { status: 429 });
+        }
+        filterArts.push(`${sp.get('angebotsart')}:${sp.get('page')}`);
+        return page(v6(`R${sp.get('angebotsart')}${sp.get('page')}`, 'ESG Analyst (Remote)', 'Hamburg'));
+      },
+    },
+  );
+  if (tripped && filterArts.join(',') === '1:1,1:2,34:1,34:2' && paced.length === 4 && sleeps.filter(ms => ms === 200).length === 3) {
+    pass('aa.fetch() remoteMatch:filter paces pages across offer types and retries a 429');
+  } else {
+    fail(`aa.fetch() filter pacing/retry: pages=${filterArts} sleeps=${JSON.stringify(sleeps)} jobs=${paced.length}`);
+  }
+
+  // An offer type that exhausts its retries must not stop the next type.
+  const afterExhaust = await aa.fetch(
+    { name: 'AA', arbeitsagentur: { keywords: ['ESG'], wo: 'Bochum', remoteNationwide: true, remoteMatch: 'filter', angebotsart: [1, 34] } },
+    {
+      sleep: async () => {},
+      fetchJson: async (url) => {
+        const sp = new URL(url).searchParams;
+        if (!sp.has('homeoffice')) return page();
+        if (sp.get('angebotsart') === '1') throw Object.assign(new Error('HTTP 503'), { status: 503 });
+        return page(v6('R34', 'ESG Analyst (Remote)', 'Hamburg'));
+      },
+    },
+  );
+  if (afterExhaust.length === 1 && afterExhaust[0].url.endsWith('R34')) {
+    pass('aa.fetch() remoteMatch:filter continues with the next offer type after one exhausts its retries');
+  } else {
+    fail(`aa.fetch() filter per-type failure: ${JSON.stringify(afterExhaust)}`);
+  }
+
+  // While probing (ctx.maxPages set), a fetch rejection propagates unwrapped.
+  class Sentinel extends Error {}
+  const sentinel = new Sentinel('budget reached');
+  let caught = null;
+  try {
+    await aa.fetch(
+      { name: 'AA', arbeitsagentur: { keywords: ['ESG', 'CSRD'], wo: 'Bochum', angebotsart: [1, 34] } },
+      { maxPages: 2, fetchJson: async (url) => {
+          if (new URL(url).searchParams.get('angebotsart') === '34') throw sentinel;
+          return page(v6('J', 'ESG Analyst', 'Bochum'));
+        } },
+    );
+  } catch (err) { caught = err; }
+  if (caught === sentinel) {
+    pass('aa.fetch() rethrows a ctx.fetch* rejection unwrapped while probing (ctx.maxPages)');
+  } else {
+    fail(`aa.fetch() probe rejection was swallowed or wrapped: ${caught && caught.message}`);
+  }
+
+  // While probing, ctx.maxPages caps list requests across the whole walk.
+  let probeRequests = 0;
+  await aa.fetch(
+    { name: 'AA', arbeitsagentur: { keywords: ['ESG', 'CSRD'], wo: 'Bochum', remoteNationwide: true, remoteMatch: 'filter', angebotsart: [1, 34], size: 1, remoteMaxPages: 3 } },
+    { maxPages: 1, sleep: async () => {}, fetchJson: async () => {
+        probeRequests++;
+        return page(v6(`X${probeRequests}`, 'ESG Analyst (Remote)', 'Hamburg'));
+      } },
+  );
+  if (probeRequests === 1) {
+    pass('aa.fetch() makes exactly one list request at ctx.maxPages: 1');
+  } else {
+    fail(`aa.fetch() probe made ${probeRequests} list requests at ctx.maxPages: 1`);
+  }
+
 } catch (e) {
   fail(`arbeitsagentur provider tests crashed: ${e.message}`);
 }

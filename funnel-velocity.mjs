@@ -44,7 +44,7 @@ import { computeFunnel, computeFunnelWithHistory, parseStatusLogStages, trackerS
 import { resolveColumns, parseTrackerRow } from './tracker-parse.mjs';
 import { resolveTrackerPath, loadCanonicalStates, resolveCanonicalState } from './tracker-utils.mjs';
 import { getCareerOpsRoot } from './path-resolver.mjs';
-import { parseAppliedDate, normalizeStatus } from './followup-cadence.mjs';
+import { parseAppliedDate, normalizeStatus, loadFollowupsEnabled } from './followup-cadence.mjs';
 import { flagValue, validateFlags } from './lib/cli-flags.mjs';
 import { localToday } from './lib/local-today.mjs';
 import { isMainModule } from './lib/is-main-module.mjs';
@@ -108,6 +108,7 @@ const HOPS = [
 // Verbatim strings the tone contract pins (also asserted by mode-doc checks).
 const SELECTION_BIAS_NOTE = 'targeted applications are expected to beat mass-platform averages — this confirms your filtering works';
 const BELOW_RANGE_ACTION = '→ check follow-up compliance (followup mode) or review your score threshold (patterns mode)';
+const BELOW_RANGE_ACTION_NO_FOLLOWUPS = '→ review your score threshold (patterns mode)';
 const CLAIM_MIN_N = 20;
 const HOP_MIN_N = 3;
 
@@ -238,23 +239,32 @@ export function computeVelocity(timelines, todayStr) {
     let sameDayExcluded = 0;
     let censored = 0;
     for (const timeline of timelines.values()) {
-      const fromIdx = timeline.findIndex(o => o.to === hop.from && o.dayMath);
-      if (fromIdx === -1) continue;
-      const later = timeline.slice(fromIdx + 1);
-      const nextIdx = later.findIndex(o => o.to === hop.to && o.dayMath);
-      const next = nextIdx === -1 ? null : later[nextIdx];
-      if (next && hop.excludeIntermediate && later.slice(0, nextIdx).some(o => o.to === hop.excludeIntermediate)) continue;
-      if (next) {
-        const d = daysBetween(timeline[fromIdx].date, next.date);
-        if (d === null || d < 0) continue;
-        if (d === 0) { sameDayExcluded++; continue; }
-        days.push(d);
-      } else if (fromIdx === timeline.length - 1) {
-        // Row's latest state is the hop's from-state: still waiting = censored.
-        // Only forward hops censor; Applied→Rejected shares Applied rows with
-        // Applied→Responded, so count censoring once (on the forward hop).
-        if (hop.to !== 'Rejected') censored++;
+      // A row can re-enter the from-state (re-applied after a rejection), so
+      // each entry starts its own measurement instead of the row's first one.
+      let start = null;
+      let left = false;
+      let viaIntermediate = false;
+      for (const o of timeline) {
+        if (o.to === hop.from) {
+          if (!start || left) { start = o.dayMath ? o : null; left = false; viaIntermediate = false; }
+          continue;
+        }
+        if (!start) continue;
+        if (o.to === hop.to && o.dayMath) {
+          const d = daysBetween(start.date, o.date);
+          start = null;
+          if (viaIntermediate || d === null || d < 0) continue;
+          if (d === 0) { sameDayExcluded++; continue; }
+          days.push(d);
+          continue;
+        }
+        left = true;
+        if (o.to === hop.excludeIntermediate) viaIntermediate = true;
       }
+      // Row's latest state is the hop's from-state: still waiting = censored.
+      // Only forward hops censor; Applied→Rejected shares Applied rows with
+      // Applied→Responded, so count censoring once (on the forward hop).
+      if (start && timeline.at(-1).to === hop.from && hop.to !== 'Rejected') censored++;
     }
     result[hop.key] = {
       from: hop.from,
@@ -429,7 +439,7 @@ export function analyze({ trackerContent, logContent, benchmarks, states, todayS
 }
 
 // --- Summary rendering (tone contract lives here — see header) ---
-function fmtCalibrationLine(label, c, smallSample, n) {
+function fmtCalibrationLine(label, c, smallSample, n, belowRangeAction) {
   if (!c || c.ownPct === null) return `  ${label}: no data yet`;
   const range = `${c.rangePct[0]}–${c.rangePct[1]}% typical band (${c.year ?? 'n/a'}, directional)`;
   let line = `  ${label}: ${c.ownPct}% vs ${range}`;
@@ -440,15 +450,16 @@ function fmtCalibrationLine(label, c, smallSample, n) {
   if (c.band === 'above-range') {
     line += ` — above the typical band${c.vsTypical ? `, ${c.vsTypical}× typical` : ''} (${SELECTION_BIAS_NOTE})`;
   } else if (c.band === 'below-range') {
-    line += ` — below the typical band ${BELOW_RANGE_ACTION}`;
+    line += ` — below the typical band ${belowRangeAction}`;
   } else {
     line += ' — within the typical band';
   }
   return line;
 }
 
-export function renderSummary(result, todayStr) {
+export function renderSummary(result, todayStr, { followupsEnabled = true } = {}) {
   const out = [];
+  const belowRangeAction = followupsEnabled ? BELOW_RANGE_ACTION : BELOW_RANGE_ACTION_NO_FOLLOWUPS;
   const { calibration: cal, waiting, velocity, dataQuality: dq } = result;
   out.push('━'.repeat(46));
   out.push(`Funnel Calibration — ${todayStr}`);
@@ -458,8 +469,8 @@ export function renderSummary(result, todayStr) {
   if (cal.everApplied === 0) {
     out.push('  no applications sent yet — calibration starts at your first Applied row');
   } else {
-    out.push(fmtCalibrationLine('Response rate', cal.responseRate, cal.smallSample, cal.everApplied));
-    out.push(fmtCalibrationLine('Interview rate', cal.interviewRate, cal.smallSample, cal.everApplied));
+    out.push(fmtCalibrationLine('Response rate', cal.responseRate, cal.smallSample, cal.everApplied, belowRangeAction));
+    out.push(fmtCalibrationLine('Interview rate', cal.interviewRate, cal.smallSample, cal.everApplied, belowRangeAction));
     if (cal.basis === 'ledger') out.push('  (rates fold status-log history — a row rejected after an interview still counts as reaching Interview)');
     if (cal.smallSample) out.push(`  (comparative claims need n≥${cal.claimMinN} applied; you have ${cal.everApplied})`);
   }
@@ -471,7 +482,7 @@ export function renderSummary(result, todayStr) {
     out.push(`  ${waiting.inFlight} in flight. Typical first-response window: ${waiting.windowDays[0]}–${waiting.windowDays[1]} days (${waiting.windowSource?.year ?? 'n/a'}, directional; many applications never get a response — silence is common, not a verdict).`);
     for (const item of waiting.items) {
       if (item.appliedDate === null) { out.push(`  #${item.num} ${item.company} — applied date unknown (no dated Applied observation; add "Applied YYYY-MM-DD" to its notes or use set-status)`); continue; }
-      const flag = item.beyondTypicalWindow ? `, beyond typical ${waiting.windowDays[0]}–${waiting.windowDays[1]}d window → consider followup mode` : '';
+      const flag = item.beyondTypicalWindow ? `, beyond typical ${waiting.windowDays[0]}–${waiting.windowDays[1]}d window${followupsEnabled ? ' → consider followup mode' : ''}` : '';
       out.push(`  #${item.num} ${item.company} — applied ${item.appliedDate} (${item.elapsedDays}d${flag})`);
     }
   }
@@ -877,7 +888,7 @@ function main() {
   }
 
   const result = analyze({ trackerContent, logContent, benchmarks, states, todayStr });
-  if (summaryMode) console.log(renderSummary(result, todayStr));
+  if (summaryMode) console.log(renderSummary(result, todayStr, { followupsEnabled: loadFollowupsEnabled() }));
   else console.log(JSON.stringify({ ...result, generatedAt: todayStr }, null, 2));
 }
 

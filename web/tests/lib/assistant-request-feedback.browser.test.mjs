@@ -4,9 +4,10 @@
 import assert from "node:assert/strict";
 import http from "node:http";
 import { test } from "node:test";
+import { liveServerSkip } from "../helpers/live-server.mjs";
 
 const url = process.env.ASSISTANT_FEEDBACK_TEST_URL;
-test("request feedback is transition-only, quiet when closed and user-navigated", { skip: !url, timeout: 120_000 }, async (t) => {
+test("request feedback is transition-only, quiet when closed and user-navigated", { skip: liveServerSkip("ASSISTANT_FEEDBACK_TEST_URL"), timeout: 120_000 }, async (t) => {
   const origin = new URL(url);
   assert.ok(["localhost", "127.0.0.1", "[::1]"].includes(origin.hostname));
   const replies = new Map();

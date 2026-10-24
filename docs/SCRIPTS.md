@@ -43,6 +43,7 @@ All scripts live in the project root as `.mjs` modules. Most are exposed via
 | `npm run tracker` | `tracker.mjs` | SQLite derived index over applications.md — sync/query/history/export |
 | `npm run find` | `find.mjs` | Resolve a report#/tracker#/company query to its full pipeline identity |
 | `npm run ics-interview -- invite.ics` | `ics-interview.mjs` | Read an interview invite's `.ics` (first VEVENT: start/end/length, time zone, link, organizer) and print a row to paste into `data/active-interviews.md` (read-only) |
+| `npm run panelist-roles -- invite.txt` | `panelist-roles.mjs` | Classify the panelists named in an interview invite (pasted text or `.ics`) by title into recruiter / hiring manager / privacy-compliance / technical / peer / executive, with a one-line prep focus per role (offline, read-only) |
 | `npm run invite-match` | `invite-match.mjs` | Fuzzy-match a pasted interview-invite email against `data/applications.md` |
 | `npm run application:init` | `application-artifacts.mjs` | Initialize one versioned application-scoped JD/CV/PDF artifact bundle |
 | `npm run paste-reply` | `paste-reply.mjs` | Manual/no-Gmail input into the `reply-watch.mjs` classification pipeline |
@@ -728,7 +729,10 @@ node closing-soon.mjs --summary                # human-readable table
 node closing-soon.mjs --within 14 --status Evaluated,Applied
 node closing-soon.mjs --today 2026-10-17       # deterministic runs/tests
 node closing-soon.mjs --tracker path/to/applications.md --jds path/to/jds
+node closing-soon.mjs --clashes --clash-min 3  # warn when closings pile up on an interview day
 ```
+
+**Interview-day clashes (opt-in):** `--clashes` reads `data/active-interviews.md` (the leading `YYYY-MM-DD` of the Date/Time cell; rows whose Status is Rejected, Declined, Ghosted or Done are skipped, emoji prefixes tolerated; unreadable dates are skipped silently). For each interview date inside the `--within` window it counts the closing-soon rows closing on that day or the day before; at `--clash-min` (default 2) or more it adds a `clashes` group `[{date, interview, closing}]` and a one-line hint in `--summary`. `--interviews <path>` overrides the file. Without `--clashes` the output is unchanged.
 
 **Exit codes:** `0` on a report (a missing tracker yields an empty result with a warning), `1` unrecognized flag, `2` invalid `--today` / `--within` / `--status` value.
 
@@ -1208,6 +1212,25 @@ node ics-interview.mjs < invite.ics
 - Unreadable fields are an em dash in the row. All-day events are reported as a date, floating times (no zone, no `Z`) as written without conversion, and a `TZID` that is not an IANA name (e.g. a Windows zone name) as `unknown-tzid` without conversion. `RRULE` is ignored with a warning.
 - `--match` hands the invite text (or a file holding it) to `invite-match.mjs` to suggest the tracker row; Company and Role are filled in only when exactly one candidate matches the company exactly. The length shown comes from the `.ics`.
 - Hand-written parser for the handful of properties needed; zero-LLM, no dependency.
+
+## panelist-roles
+
+Reads who is on an interview panel from the invite itself (#5797) and tags each person's role, so the prep can change with the audience: a privacy officer probes confidentiality, a hiring manager delivery, a recruiter fit and logistics, a technical peer depth. `invite-match.mjs` reads the company, date and requisition and `ics-interview.mjs` reads the calendar file; neither looked at the people.
+
+```
+node panelist-roles.mjs invite.txt [--summary] [--table config/panelist-roles.yml]
+node panelist-roles.mjs invite.ics --summary
+node panelist-roles.mjs < invite.txt
+```
+
+- Input is the pasted invite text, a file holding it, or an `.ics` (first `VEVENT`: `SUMMARY`, `DESCRIPTION`, organizer and attendee display names). Extracted from that text only: `Name - Title` (hyphen, dash or pipe), `Name, Title` (only when the title carries a known title word), `meeting with Name` lead-ins (name with no title), and a sign-off block (name and title, or a title alone). Duplicates are merged, preferring the entry that has a title.
+- Each title is matched against `templates/panelist-roles.yml`. The first role (in file order) with a keyword hit is the `role`; any later role that also hits is listed under `alsoMatches` (so "Director, ... and Privacy Officer" is `privacy-compliance` with `hiring-manager` as a second reading). No hit is `unknown`. The table is data: the default is system layer and replaced on update, so to change keywords or the `focus` line copy it to a path of your own and pass `--table`.
+- Output (JSON, or `--summary` with one line per panelist): `panelists` (`name`, `title`, `role`, `alsoMatches`, `source`, `prepFocus`), a `roles` roll-up with one prep-focus line per role, and `warnings`. `modes/interview/plan.md` reads this when it builds a per-panelist plan.
+- Zero-LLM, offline, no dependency beyond the YAML loader. No network and no LinkedIn or other profile lookup. It writes nothing, including the tracker. Panelist names are third-party personal data: they appear in the output only and are never stored by the script.
+- Extracted text is data. Names and titles are echoed with control characters stripped and length capped, and classified by keyword; an instruction-like line in an invite is never followed.
+- Heuristic, not exhaustive: a lead-in such as "meeting with Example Co" can read a company as a name (role `unknown`), and signature or organizer entries are the sender, who may not be on the panel (a warning says so). Check the list against the invite.
+
+**Exit codes:** `0` on a report (including no panelists found), `1` unreadable input or unrecognized flag, `2` invalid `--table`.
 
 ## paste-reply
 

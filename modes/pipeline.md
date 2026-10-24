@@ -4,7 +4,7 @@ Process job URLs stored in `data/pipeline.md`. The user adds URLs at any time an
 
 ## Liveness sweep
 
-**Run this before processing any URLs.** Entries added by the scanner in headless/batch mode carry `**Verification:** unconfirmed (batch mode)` because Playwright was unavailable at scan time — they were never checked for liveness. Without a sweep, dead postings reach evaluation one tab at a time, burning time and tokens on phantom roles (a single inbox of 8 stale URLs produces 8 wasted evaluations).
+**Run this before processing any URLs.** Inbox entries are usually unchecked: `scan.mjs` adds postings without checking that each one is still open unless it ran with `--verify`, and a URL the user pasted was never checked at all. Without a sweep, dead postings reach evaluation one tab at a time, burning time and tokens on phantom roles (a single inbox of 8 stale URLs produces 8 wasted evaluations).
 
 Sweep pending non-LinkedIn URLs in one batch with the zero-token liveness checker before the per-URL loop:
 
