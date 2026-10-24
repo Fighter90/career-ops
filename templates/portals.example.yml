@@ -1240,6 +1240,8 @@ search_queries:
 #   zoho-recruit    <tenant>.zohorecruit.com  (any path; the board is always read from /jobs/Careers)
 #   computrabajo    <country>.computrabajo.com/<search path>  (LatAm board; e.g. co.computrabajo.com/trabajo-de-sistemas)
 #   magneto         www.magneto365.com/co/<search path>       (Colombia board; e.g. /co/trabajos/buscar/tecnologia)
+#   paylocity       recruiting.paylocity.com/Recruiting/Jobs/All/<board-guid>  (or api: field; a posting's
+#                   /Jobs/Details/<id> link carries no board id and is NOT claimed)
 #
 # When the public careers URL is a branded custom domain (e.g.
 # careers.adyen.com), set `provider: smartrecruiters` explicitly to
@@ -1280,6 +1282,11 @@ search_queries:
 #
 # - name: Example BambooHR Co
 #   careers_url: https://exampleco.bamboohr.com/careers   # any *.bamboohr.com host
+#   enabled: true
+#
+# - name: Example Paylocity Co
+#   careers_url: https://recruiting.paylocity.com/Recruiting/Jobs/All/00000000-0000-4000-8000-000000000000
+#                          # the board link off the careers page; the GUID is the board id
 #   enabled: true
 #
 # - name: Example Collage HR Co
@@ -2848,6 +2855,11 @@ tracked_companies:
     scan_method: websearch
     scan_query: 'site:jobs.ashbyhq.com/workos "Solutions Engineer" OR "Developer Success" OR "Engineer"'
     notes: "Developer tools and enterprise-ready auth/platform APIs."
+    enabled: true
+
+  - name: CloudBees
+    careers_url: https://recruiting.paylocity.com/Recruiting/Jobs/All/a432d829-f701-4cf3-9108-56ef703b2ac5
+    notes: "CI/CD and software delivery platform."
     enabled: true
 
   # -- Dev Tools / AI Infra (DevRel, SA, FDE focus) --

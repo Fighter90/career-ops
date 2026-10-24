@@ -13,7 +13,7 @@
  * Fold: per (tracker#, type), highest trust tier wins, then latest date.
  *   actual:     contract > offer-letter > recruiter-verbal > user
  *   desired:    user > profile
- *   advertised: user > recruiter-verbal > jd
+ *   advertised: user > recruiter-verbal > jd > third-party (unverified estimate; flagged `unverified`)
  *
  * `stated` observations are a separate, narrower-purpose log: a specific number
  * the candidate verbally committed to, in a specific interview round, to a
@@ -143,7 +143,10 @@ const relocHomeLocationFlag = flagValue(args, '--home-location') ?? null;
 const TRUST = {
   actual: { contract: 3, 'offer-letter': 2, 'recruiter-verbal': 1, user: 0 },
   desired: { user: 1, profile: 0 },
-  advertised: { user: 2, 'recruiter-verbal': 1, jd: 0 },
+  // `third-party` = an unverified pay estimate from an aggregator / salary-estimate
+  // site (not the employer, not a recruiter). Lowest tier, advertised-only, so any
+  // jd / recruiter-verbal / user row for the same tracker# supersedes it.
+  advertised: { user: 2, 'recruiter-verbal': 1, jd: 0, 'third-party': -1 },
 };
 
 const VALID_TYPES = new Set(['desired', 'advertised', 'actual', 'stated']);
@@ -521,6 +524,8 @@ function pickEffective(type, candidates) {
     currency: top.currency, raw: top.amount,
     period: top.period ?? compensationPeriod(top.amount),
     postingLocation: top.postingLocation ?? null,
+    // only present when true, so output for data without third-party rows is unchanged
+    ...(top.source === 'third-party' ? { unverified: true } : {}),
   };
 }
 
@@ -1527,7 +1532,7 @@ function loadProfileLocation() {
 
 // --- Output ---
 const fmtVal = (v) => (v >= 1000 && v % 500 === 0 ? `${v / 1000}k` : String(v));
-const fmtEff = (e) => (e ? `${fmtVal(e.value)} ${e.currency || ''} (${e.source}, ${e.date})`.replace('  ', ' ') : '—');
+const fmtEff = (e) => (e ? `${e.unverified ? '~ ' : ''}${fmtVal(e.value)} ${e.currency || ''} (${e.source}, ${e.date})${e.unverified ? ' [unverified estimate]' : ''}`.replace('  ', ' ') : '—');
 const fmtPct = (p) => (p === null || p === undefined ? '—' : `${p >= 0 ? '+' : ''}${p.toFixed(1)}%`);
 const daysOld = (date) => Math.max(0, Math.round((Date.now() - Date.parse(date)) / 86400000));
 // Rounded to the nearest $100 — this is a bracket-only estimate, never claim

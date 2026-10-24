@@ -312,8 +312,13 @@ export function computePortalStats(portalsYmlContent, scanStats, producingCompan
   }
   const companies = Array.isArray(cfg.tracked_companies) ? cfg.tracked_companies : [];
   const boards = Array.isArray(cfg.job_boards) ? cfg.job_boards : [];
+  // Only enabled entries count as configured: a disabled entry writes no new
+  // health rows (resolveEntries skips it), so counting it here would let its
+  // final failure streak light the 🚨 forever in a way no fix can clear — the
+  // same trap documented below for probe staleness.
+  const enabledEntries = companies.filter((c) => c?.enabled !== false);
   const configuredNames = new Set(
-    companies.map((c) => String(c?.name || '').toLowerCase()).filter(Boolean),
+    enabledEntries.map((c) => String(c?.name || '').toLowerCase()).filter(Boolean),
   );
   const producing = new Set(producingCompanyNames.map((n) => String(n).toLowerCase()));
   let producingCompanies = 0;

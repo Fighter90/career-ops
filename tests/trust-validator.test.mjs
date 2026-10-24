@@ -334,6 +334,12 @@ section('buildTrustValidator — Rule 4: ATS allowlist bypasses mismatch');
   assert(!r.flags.includes('company_domain_mismatch'), 'ashbyhq.com → ATS allowlist, no mismatch');
 }
 
+{
+  const v = buildTrustValidator({ enabled: true });
+  const r = v({ url: 'https://recruiting.paylocity.com/Recruiting/Jobs/Details/4001', company: 'Acme' });
+  assert(!r.flags.includes('company_domain_mismatch'), 'paylocity.com → ATS allowlist, no mismatch');
+}
+
 section('buildTrustValidator — Rule 4: empty company → no mismatch flag');
 
 {

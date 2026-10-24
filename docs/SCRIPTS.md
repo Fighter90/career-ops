@@ -47,6 +47,7 @@ All scripts live in the project root as `.mjs` modules. Most are exposed via
 | `npm run application:init` | `application-artifacts.mjs` | Initialize one versioned application-scoped JD/CV/PDF artifact bundle |
 | `npm run paste-reply` | `paste-reply.mjs` | Manual/no-Gmail input into the `reply-watch.mjs` classification pipeline |
 | `npm run closing-soon` | `closing-soon.mjs` | List tracker rows whose Notes (or matching `jds/` capture) carry a closing date within N days, plus separate `overdue` and `unparsed` groups (read-only) |
+| `npm run close-stale` | `close-stale.mjs` | Close long-silent `Applied` rows in bulk (dry run by default; `--confirm` writes through the locked tracker path, tags the note and logs each transition) |
 | `npm run reeval-candidates` | `reeval-candidates.mjs` | List `Evaluated` tracker rows whose last evaluation predates the latest change to `cv.md`, `article-digest.md`, `config/profile.yml` or `modes/_profile.md` (read-only) |
 | `npm run freshness` | `check-table-freshness.mjs` | Staleness validator for jurisdiction data tables (`as_of` / `next_effective` watchdog) |
 | `npm run jd-archive` | `check-jd-archive.mjs` | Validate every `reports/*.md` has an archived JD (embedded section or `jds/` capture) — flags `missing-jd-archive` |
@@ -417,7 +418,7 @@ Observation line format (TSV, one per line, `#`-prefixed lines are comments):
 {tracker#}\t{YYYY-MM-DD}\t{desired|advertised|actual|stated}\t{amount}\t{currency}\t{source}\t{note}\t{round}\t{interviewer}
 ```
 
-Amounts: number + optional k/K suffix, ranges allowed ("80-90k"), annual gross unless noted. Sources: jd | profile | user | recruiter-verbal | offer-letter | contract.
+Amounts: number + optional k/K suffix, ranges allowed ("80-90k"), annual gross unless noted. Sources: jd | profile | user | recruiter-verbal | offer-letter | contract | third-party (`advertised` only: an unverified aggregator/salary-estimate figure, lowest tier, flagged `unverified` in output and superseded by any `jd`/`recruiter-verbal`/`user` row).
 
 **Column 1 is a tracker#, not a report#** (#4351). It is the `#` of the row in the active tracker file (`data/applications.md` in the default layout), and that row is where the observation's company and role come from. Do not read the number off a `reports/{###}-*.md` filename: those are two independent counters that diverge permanently once any row exists without a report — the same divergence `set-status.mjs` documents below — so on a diverged tracker `#5` and report 5 are different applications. To log a figure, find the application's tracker row and copy its `#`. Padding is not identity — `29` and `029` are the same tracker#, so either spelling matches, and a row that has no report at all still folds normally.
 
@@ -442,13 +443,13 @@ node funnel-velocity.mjs --self-test
 node funnel-velocity.mjs --benchmarks path/to/benchmarks.yml
 ```
 
-Ledger line format (TSV, appended by `set-status.mjs` and, for a status a kept duplicate takes over, `dedup-tracker.mjs`; `#`-prefixed lines are comments):
+Ledger line format (TSV, appended by `set-status.mjs`, for a status a kept duplicate takes over, `dedup-tracker.mjs`, and for a bulk close of silent rows, `close-stale.mjs`; `#`-prefixed lines are comments):
 
 ```text
 {tracker#}\t{YYYY-MM-DD}\t{from}\t{to}\t{source}\t{note}
 ```
 
-`from` may be `-` (unknown prior state); `to` = `-` retracts the row's latest observation; a later `correction`-source line with the same (tracker#, to) replaces the earlier observation's date. Sources are the closed set `VALID_SOURCES` in `funnel-velocity.mjs`. `backfill`, `manual` and `dedup-tracker` are counted but kept out of day-math, because they record a transition found after the fact rather than observed when it happened.
+`from` may be `-` (unknown prior state); `to` = `-` retracts the row's latest observation; a later `correction`-source line with the same (tracker#, to) replaces the earlier observation's date. Sources are the closed set `VALID_SOURCES` in `funnel-velocity.mjs`. `backfill`, `manual`, `dedup-tracker` and `close-stale` are counted but kept out of day-math, because they record a transition found after the fact rather than observed when it happened.
 
 **Exit codes:** `0` always (missing tracker/ledger produce an explanatory empty result), `1` self-test or benchmarks-load failure.
 
@@ -733,6 +734,40 @@ node closing-soon.mjs --tracker path/to/applications.md --jds path/to/jds
 
 ---
 
+## close-stale
+
+Closes long-silent `Applied` rows in bulk. `set-status.mjs` and `outcome.mjs <selector> no_response` act on one row at a time, so a long search ends up with hundreds of rows that still read as "in flight" to the funnel, the follow-up cadence and the dashboard. This applies the existing `no_response` -> `Discarded` convention (`modes/outcome.md`) to every row that has gone quiet. Zero-LLM, no network, no schema change.
+
+**Dry run by default**: nothing is written without `--confirm`.
+
+A row is a candidate when its status resolves to `Applied` (aliases such as `Sent` count) and it is **older than** `--days` (default 60; a row exactly N days old is kept). Age runs from the latest of the Date column, an `Applied YYYY-MM-DD` date in Notes and the day `status-log.tsv` recorded the move to Applied. A candidate is **skipped**, with its reason reported, when something later suggests an answer may still come:
+
+| Reason | Meaning |
+|--------|---------|
+| `active-interview` | the company has an entry in `data/active-interviews.md` (company match only, so a role-title mismatch never closes an application you are interviewing for) |
+| `status-log` | `data/status-log.tsv` holds a transition after Applied |
+| `open-follow-up` | `data/follow-ups.md` has a follow-up logged for this row within the last `--days` days, or an uncleared `next #N` pin dated today or later (the pin `followup-seed.mjs` writes at apply time is long past on a stale row and does not count) |
+| `previously-auto-closed` | the note tag or a `close-stale` ledger line is already present: a row you reopened stays open |
+| `duplicate-num` | two rows share the tracker # (#1704), so the ledger cannot say which one a transition belongs to |
+
+Every other state (Evaluated, Responded, Assessment, Interview, Offer, Hired, Rejected, Discarded, SKIP) is never touched.
+
+`--confirm` rewrites the candidates inside one tracker transaction (the lock and atomic replace `dedup-tracker.mjs` uses): Status becomes `--status` (default `Discarded`; any canonical state except `Applied`, aliases accepted), the fixed tag `no response (auto-closed YYYY-MM-DD, Nd)` is appended to Notes so these rows can be told apart from real rejections and found again if a reply arrives, and one `source=close-stale` line per row is appended to `data/status-log.tsv`. To reopen a row that did get a reply, use `set-status.mjs`. Re-running changes nothing.
+
+```bash
+node close-stale.mjs                       # dry run, JSON (metadata, candidates, skipped)
+node close-stale.mjs --summary             # dry run, counts + a sample
+node close-stale.mjs --days 45 --status Discarded
+node close-stale.mjs --confirm             # write
+node close-stale.mjs --today 2026-10-17    # deterministic runs/tests
+```
+
+Paths follow `CAREER_OPS_ROOT` / `CAREER_OPS_DATA_DIR` / `CAREER_OPS_TRACKER`. Dates are compared as `YYYY-MM-DD` strings at UTC midnight, so the result does not depend on the host timezone.
+
+**Exit codes:** `0` on a report, `1` unrecognized flag, `2` invalid `--days` / `--today` / `--status` value or a tracker with no Notes column, `4` tracker lock timeout (nothing written).
+
+---
+
 ## reeval-candidates
 
 Lists tracker rows that were scored against older candidate evidence. A row's score is fixed when the role is evaluated, while the primary sources the evaluation read keep changing (`expand` adds proof points, `add` adds a project, the profile gains a target). This script compares each row's last evaluation date with the last change to `cv.md`, `article-digest.md`, `config/profile.yml` (through `getProfilePath()`, so `CAREER_OPS_PROFILE` is honored) and `modes/_profile.md`, all under the data root, and lists the rows that predate it, oldest evaluation first, with the source(s) that changed after each one.
@@ -937,7 +972,7 @@ Defaults are unchanged, so a single-lane setup needs none of this. Note that the
 
 ## scan:full
 
-Reverse ATS discovery scanner. Where `scan.mjs` scans the companies you track in `portals.yml`, this inverts the direction: it walks public directories of companies per ATS (Greenhouse, Lever, Ashby, Workday, iCIMS, BambooHR) and surfaces fresh postings matching your `portals.yml` `title_filter` / `location_filter` — no manual company curation. Company directories come from the public [job-board-aggregator](https://github.com/Feashliaa/job-board-aggregator) dataset, cached in `data/cache/` for 24 hours.
+Reverse ATS discovery scanner. Where `scan.mjs` scans the companies you track in `portals.yml`, this inverts the direction: it walks public directories of companies per ATS (Greenhouse, Lever, Ashby, Workday, iCIMS, BambooHR, Paylocity) and surfaces fresh postings matching your `portals.yml` `title_filter` / `location_filter` — no manual company curation. Company directories come from the public [job-board-aggregator](https://github.com/Feashliaa/job-board-aggregator) dataset, cached in `data/cache/` for 24 hours.
 
 Pass `--history-seeds` to derive board seeds locally from posting URLs already
 in the user's tracker and `data/scan-history.tsv`. A normal run does not read
@@ -1026,7 +1061,7 @@ the sweep, or delete the checkpoint to start fresh.
 
 ### DNS pacing
 
-A full sweep resolves one hostname per Workday, iCIMS and BambooHR tenant — 25,205 distinct hostnames across the current datasets (3,781 Workday + 10,108 iCIMS + 11,316 BambooHR), against 3 for Greenhouse, Lever and Ashby combined. Those lookups are irreducible (nothing to cache: every hostname is distinct), and issued unpaced they trip the per-client rate limit on a resolver like Pi-hole, which then refuses queries for the whole machine — the scan reports thousands of misleading `fetch failed` lines while the boards themselves are fine (#2229).
+A full sweep resolves one hostname per Workday, iCIMS and BambooHR tenant — 25,205 distinct hostnames across the current datasets (3,781 Workday + 10,108 iCIMS + 11,316 BambooHR). Greenhouse, Lever, Ashby and Paylocity serve every board from a single hostname each, so they add only 4 more. Those per-tenant lookups are irreducible (nothing to cache: every hostname is distinct), and issued unpaced they trip the per-client rate limit on a resolver like Pi-hole, which then refuses queries for the whole machine — the scan reports thousands of misleading `fetch failed` lines while the boards themselves are fine (#2229).
 
 Uncached, non-coalesced lookups are therefore paced at **400 per minute** by default. The token is spent *before* `dns.lookup()` runs, so a name answered locally — from `/etc/hosts`, say — still costs one; the ceiling meters what the process asks to resolve, not what leaves the machine.
 
@@ -1597,6 +1632,7 @@ node set-status.mjs --report N <state> [--note "..."]       # row whose Report c
 node set-status.mjs "Company Name" Applied --role "Role"    # narrow match by role fragment
 node set-status.mjs --row 12 Applied
 node set-status.mjs --report 345 Applied --on 2026-08-01
+node set-status.mjs --row 12 --undo                         # take back the last logged change
 node set-status.mjs --help                                  # usage + the canonical states, exits 0
 ```
 
@@ -1615,6 +1651,10 @@ A bare number or company name is convenient, but becomes ambiguous when multiple
 - `--on <date>`: Specifies an explicit transition date (YYYY-MM-DD) for status logs and notes.
 - `--json`: Formats command output as structured JSON.
 - `--expect-row <hash>` / `--expect-status <state>`: For a caller that showed the row to a person before writing (`reply-watch.mjs`). Under the lock, refuse the write if any cell but Status differs from the reviewed row (`trackerRowIdentity` in `tracker-parse.mjs`), or if the status is no longer the reviewed one and not already `<state>`. Unlike `--expect-tracker`, a write to another row does not trip them.
+
+### Undo a status change
+
+`--undo` takes the place of `<state>`. It reads the row's last surviving change from `status-log.tsv`, writes that change's prior status back to the tracker, and appends a retraction line (`to` = `-`). Every ledger reader then drops the change, so a mis-clicked Applied leaves no trace in the funnel, and none in `tracker.mjs history` once its next sync rebuilds history from the ledger. Run it again to step back one more change. It refuses, and writes nothing, when the row has no logged change (`nothing-to-undo`, exit 2), when the tracker no longer shows the status of that change because someone edited it since (`undo-stale`, exit 3), or when the change has no known prior status (`undo-unknown-prior`, exit 1). If the retraction line cannot be written, it puts the old status back and fails (`undo-not-logged`, exit 1). It does not seed a follow-up or start a JD archive.
 
 `--row` and `--report` are mutually exclusive. Because an explicit selector answers the report-mismatch guard rather than overriding it, `--row` bypasses that guard without needing `--force` (which silences the check while the ambiguity is still real).
 

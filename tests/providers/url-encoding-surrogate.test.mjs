@@ -238,6 +238,17 @@ try {
     ),
     (jobs) => jobs.length === 1 && jobs[0].url === 'https://acme.zohorecruit.com/jobs/Careers/101',
   );
+
+  // paylocity.parsePaylocityBoard — for…of over window.pageData.Jobs; JobId feeds the posting URL.
+  const { parsePaylocityBoard } = await load('paylocity.mjs');
+  check(
+    'paylocity.parsePaylocityBoard',
+    () => parsePaylocityBoard(
+      `<script>window.pageData = ${JSON.stringify({ Jobs: [{ JobId: `${LONE}bad`, JobTitle: 'Bad Id' }, { JobId: 101, JobTitle: 'Good Id' }] })};</script>`,
+      'Acme',
+    ),
+    (jobs) => jobs.length === 1 && jobs[0].url === 'https://recruiting.paylocity.com/Recruiting/Jobs/Details/101',
+  );
 } catch (e) {
   fail(`per-provider surrogate tests crashed: ${e.message}`);
 }
@@ -264,7 +275,7 @@ try {
   // regression this list catches.
   const CONVERTED = [
     'alibaba.mjs', 'arbeitsagentur.mjs', 'bamboohr.mjs', 'dover.mjs', 'feishu-jobs.mjs', 'garena.mjs', 'jibeapply.mjs',
-    'kalibrr.mjs', 'manfred.mjs', 'meituan.mjs', 'mokahr.mjs', 'phenom.mjs', 'platsbanken.mjs',
+    'kalibrr.mjs', 'manfred.mjs', 'meituan.mjs', 'mokahr.mjs', 'paylocity.mjs', 'phenom.mjs', 'platsbanken.mjs',
     'techinasia.mjs', 'thehub.mjs', 'tkms.mjs', 'vdab.mjs', 'zoho-recruit.mjs',
   ];
 

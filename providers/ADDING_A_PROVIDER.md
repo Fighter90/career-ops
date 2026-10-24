@@ -172,10 +172,10 @@ judge.
 `scan-ats-full.mjs` reaches a provider in one of two ways, and both call
 `enrichDate`:
 
-- **The dataset sweep.** A **fixed** `SOURCES` table of six directly
+- **The dataset sweep.** A **fixed** `SOURCES` table of seven directly
   imported modules (`greenhouse`, `lever`, `ashby`, `workday`, `icims`,
-  `bamboohr`), each paired with a public company dataset. No registry
-  lookup; joining it means adding an import and a `SOURCES` entry.
+  `bamboohr`, `paylocity`), each paired with a public company dataset. No
+  registry lookup; joining it means adding an import and a `SOURCES` entry.
 - **The `--history-seeds` pass.** Boards derived from the user's tracker and
   scan history (`history-ats-seeds.mjs`). This one does load the registry,
   but it only reaches a provider whose `id` equals a vendor label from

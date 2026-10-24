@@ -5,9 +5,9 @@
  *
  * Where scan.mjs scans the companies you track in portals.yml, this script
  * inverts the direction: it walks public directories of companies per ATS
- * (Greenhouse, Lever, Ashby, Workday, iCIMS, BambooHR) and surfaces fresh
- * postings that match your portals.yml `title_filter` / `location_filter` —
- * no manual company curation needed.
+ * (Greenhouse, Lever, Ashby, Workday, iCIMS, BambooHR, Paylocity) and
+ * surfaces fresh postings that match your portals.yml `title_filter` /
+ * `location_filter` — no manual company curation needed.
  *
  * Optional `title_filter_full` in portals.yml overrides `title_filter` for
  * THIS scanner only, so the keywords tuned for scan.mjs's curated company
@@ -64,6 +64,8 @@ import ashby from './providers/ashby.mjs';
 import workday, { WORKDAY_TRUNCATED_REASON } from './providers/workday.mjs';
 import icims from './providers/icims.mjs';
 import bamboohr from './providers/bamboohr.mjs';
+import paylocity, { boardUrl as paylocityBoardUrl } from './providers/paylocity.mjs';
+import { decodeEntities } from './providers/_html-entities.mjs';
 import { buildTitleFilter, buildTitleFilterOverrides, buildTitleFilterWithOverrides, buildLocationFilter, buildContentFilter, matchedTitleKeywords, loadSeenUrls, normalizeUrlForDedup, appendToPipeline, appendToScanHistory, findBlacklistEntry, loadBlacklist, parseSinceDays, PORTALS_PATH, PIPELINE_PATH, SCAN_HISTORY_PATH } from './scan.mjs';
 import { localToday } from './lib/local-today.mjs';
 import { printScanSummaryHeader } from './lib/scan-summary-marker.mjs';
@@ -112,6 +114,11 @@ const CONCURRENCY = 20;
 // after a cooldown with no change to the dataset. The boards were never dead —
 // they were refused, and the matches on them were silently missed.
 const SINGLE_HOST_CONCURRENCY = 6;
+// recruiting.paylocity.com is also one host for every board, but throttles far
+// earlier: at SINGLE_HOST_CONCURRENCY a full sweep got HTTP 429 on 9,052 of
+// 10,252 boards. The provider retries a 429 with backoff; this keeps the sweep
+// from provoking one on nearly every board.
+const PAYLOCITY_CONCURRENCY = 2;
 // A refusing resolver fails every lookup in milliseconds, so a sweep that
 // keeps going just feeds it (#2229). Stop after this many consecutive
 // resolver-level failures — high enough that a handful of unlucky boards
@@ -283,6 +290,17 @@ export function icimsHostCandidates(slug) {
   return s.includes('careers') ? [asIs, prefixed] : [prefixed, asIs];
 }
 
+// A Paylocity dataset row is a board GUID plus the company name. The dataset
+// stores names HTML-escaped ("A &amp; B"), so they are decoded here. An empty
+// name is kept empty: the provider then names the company from the board's
+// own title.
+export function paylocityEntry(row) {
+  const careersUrl = paylocityBoardUrl(row?.guid);
+  if (!careersUrl) return null;
+  const name = typeof row.name === 'string' ? decodeEntities(row.name).trim() : '';
+  return entryOnHost(name, careersUrl, h => h === 'recruiting.paylocity.com');
+}
+
 // Each source: the provider module that does the fetching, plus how to turn a
 // dataset entry into a synthetic PortalEntry the provider can detect/fetch.
 export const SOURCES = {
@@ -358,6 +376,19 @@ export const SOURCES = {
     toEntry: (slug) => SLUG_RE.test(String(slug))
       ? entryOnHost(String(slug), `https://${slug}.bamboohr.com/careers`, h => h === `${slug}.bamboohr.com`)
       : null,
+  },
+  paylocity: {
+    provider: paylocity,
+    // Whole directory behind one host that throttles early — see PAYLOCITY_CONCURRENCY.
+    concurrency: PAYLOCITY_CONCURRENCY,
+    // One host means one keep-alive pool, so per-board connection scopes would
+    // only add a TLS handshake per board (see boardScope below).
+    singleHost: true,
+    // Entries are { guid, name, jobs } objects, not slugs. `jobs` is the
+    // dataset's count at snapshot time and does not decide whether a board is
+    // scanned: it is out of date by the time the sweep runs.
+    dataset: `${DATASET_BASE}/paylocity_companies_clean.json`,
+    toEntry: (row) => paylocityEntry(row),
   },
 };
 

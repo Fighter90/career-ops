@@ -82,8 +82,11 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 // `dedup-tracker` is the opposite class: the kept row of a duplicate pair takes
 // over the removed row's more advanced status, and that transition was found
 // at dedup time, not observed then (#5536).
-const VALID_SOURCES = new Set(['set-status', 'web', 'correction', 'backfill', 'manual', 'reply-watch', 'dedup-tracker']);
-// Sources whose dates are trusted for day-math. backfill/manual/dedup-tracker
+// `close-stale` is the same class: close-stale.mjs moves a long-silent Applied
+// row to Discarded in bulk, dated the day it ran. That is when the silence was
+// declared, not when anything happened, so it must not read as a hop (#5794).
+const VALID_SOURCES = new Set(['set-status', 'web', 'correction', 'backfill', 'manual', 'reply-watch', 'dedup-tracker', 'close-stale']);
+// Sources whose dates are trusted for day-math. backfill/manual/dedup-tracker/close-stale
 // are parsed and counted but excluded: they are reconstructed after the fact,
 // not observed.
 const DAY_MATH_SOURCES = new Set(['set-status', 'web', 'correction', 'reply-watch']);
@@ -153,19 +156,20 @@ export function parseStatusLog(content, states) {
 }
 
 /**
- * Fold observations into one ordered timeline per tracker#.
- *
- * Rules (append-only log semantics):
+ * Replay observations in file order, one timeline per tracker#, applying the
+ * ledger's edit rules:
  *   - later `correction` with same (num, to) replaces the earlier observation's
  *     date (the fix for "agent logged the wrong day")
  *   - `to: "-"` retracts the row's latest surviving observation (the fix for
  *     "that transition never happened")
- *   - otherwise observations accumulate in file order (the log IS the order;
- *     dates may legitimately be non-monotonic via --on backdating)
+ *   - otherwise observations accumulate in file order
  *
- * @returns Map num -> [{to, date, source, dayMath}]
+ * File order is what a retraction pops, so the last entry is the change a new
+ * retraction line would remove (set-status.mjs --undo reads it).
+ *
+ * @returns Map num -> [{from, to, date, source, dayMath}]
  */
-export function foldObservations(observations) {
+export function replayObservations(observations) {
   const byNum = new Map();
   for (const obs of observations) {
     if (!byNum.has(obs.num)) byNum.set(obs.num, []);
@@ -173,13 +177,23 @@ export function foldObservations(observations) {
     if (obs.to === '-') { timeline.pop(); continue; }
     if (obs.source === 'correction') {
       const idx = timeline.map(o => o.to).lastIndexOf(obs.to);
-      if (idx !== -1) { timeline[idx] = { to: obs.to, date: obs.date, source: obs.source, dayMath: obs.dayMath }; continue; }
+      if (idx !== -1) { timeline[idx] = { from: timeline[idx].from, to: obs.to, date: obs.date, source: obs.source, dayMath: obs.dayMath }; continue; }
     }
-    timeline.push({ to: obs.to, date: obs.date, source: obs.source, dayMath: obs.dayMath });
+    timeline.push({ from: obs.from, to: obs.to, date: obs.date, source: obs.source, dayMath: obs.dayMath });
   }
-  // Sort each timeline by date so hop math sees event order, not entry order
-  // (--on backdating makes file order unreliable). Stable sort keeps same-day
-  // catch-up entries in entry order.
+  return byNum;
+}
+
+/**
+ * Fold observations into one timeline per tracker#: replayObservations(), then
+ * sorted by date so hop math sees event order, not entry order (--on
+ * backdating makes file order unreliable, so dates may be non-monotonic in the
+ * log). Stable sort keeps same-day catch-up entries in entry order.
+ *
+ * @returns Map num -> [{from, to, date, source, dayMath}]
+ */
+export function foldObservations(observations) {
+  const byNum = replayObservations(observations);
   for (const timeline of byNum.values()) {
     timeline.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
   }

@@ -1,4 +1,4 @@
-#!/bin/zsh
+#!/usr/bin/env bash
 # Unattended follow-up sweep, run via launchd (see docs/AUTOMATION.md).
 # Never sends anything -- writes drafts to output/ for the user to review.
 

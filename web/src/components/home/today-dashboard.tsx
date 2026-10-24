@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Bell, CircleHelp, Sparkles, ArrowRight } from "lucide-react";
+import { Bell, CircleHelp, Sparkles, ArrowRight, Undo2, X } from "lucide-react";
 import { instrumentSerif } from "@/lib/fonts";
 import { HeroGlow } from "@/components/hero-glow";
 import type { Application, InboxJob } from "@/lib/career-ops";
@@ -15,6 +15,7 @@ import type { CardReason } from "@/lib/machine-summary.mjs";
 import { QuickEvaluate } from "@/components/quick-evaluate";
 import { FollowupsDueSectionSkeleton } from "@/components/page-loading-skeletons";
 import { scoreNum } from "@/lib/format";
+import { undoStatus } from "@/lib/pipeline-status.mjs";
 import { pickAwaitingDecision, groupAwaiting } from "@/lib/home/awaiting.mjs";
 import { companyPresentation } from "@/lib/company-presentation.mjs";
 import { resolveHeroState, mayClaimAllClear, showsQueue, missingSourceLabel, displayCounts } from "@/lib/home/hero-state.mjs";
@@ -48,6 +49,7 @@ export function TodayDashboard({
   const [freshCount, setFreshCount] = useState(0);
   const [freshLoading, setFreshLoading] = useState(true);
   const [freshError, setFreshError] = useState(false);
+  const [decisionUndo, setDecisionUndo] = useState<{ n: string; label: string; busy?: boolean; error?: string } | null>(null);
   const requestGeneration = useRef(0);
   const router = useRouter();
   const dateLabel = useMemo(() => new Date().toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" }), []);
@@ -111,6 +113,24 @@ export function TodayDashboard({
       requestGeneration.current += 1;
     };
   }, [refetch, router]);
+
+  // A Skip or Applied click removes its card on refresh, so the undo lives here.
+  useEffect(() => {
+    if (!decisionUndo || decisionUndo.busy || decisionUndo.error) return;
+    const t = setTimeout(() => setDecisionUndo((current) => (current === decisionUndo ? null : current)), 5000);
+    return () => clearTimeout(t);
+  }, [decisionUndo]);
+
+  const undoDecision = async (notice: { n: string; label: string }) => {
+    setDecisionUndo({ ...notice, busy: true });
+    try {
+      await undoStatus(notice.n);
+      setDecisionUndo(null);
+      router.refresh();
+    } catch (cause) {
+      setDecisionUndo({ ...notice, error: cause instanceof Error ? cause.message : "Could not undo. Please try again." });
+    }
+  };
 
   // Awaiting decision: scored (Evaluated) but no terminal status yet. The
   // ordering lives in lib/home/awaiting.mjs so it can be tested — see the file
@@ -266,7 +286,15 @@ export function TodayDashboard({
               <h3 className="mb-2 text-xs font-medium text-faint">{label}</h3>
               <div className="grid gap-2.5 sm:grid-cols-2">
                 {group.map((a) => (
-                  <DecisionCard key={a.n} app={a} reason={reasons[a.n]} />
+                  <DecisionCard
+                    key={a.n}
+                    app={a}
+                    reason={reasons[a.n]}
+                    onDecided={(status) => {
+                      const company = companyPresentation(a).label;
+                      setDecisionUndo({ n: a.n, label: status === "Applied" ? `Marked ${company} applied` : `Skipped ${company}` });
+                    }}
+                  />
                 ))}
               </div>
             </div>
@@ -296,6 +324,25 @@ export function TodayDashboard({
           <p className="mx-auto mt-3 max-w-md text-sm text-muted">
             Nothing needs you right now. Run a <Link href="/explore" className="text-brand hover:underline">free scan</Link> to surface this week&apos;s roles, or check your <Link href="/pipeline" className="text-brand hover:underline">pipeline</Link>.
           </p>
+        </div>
+      )}
+
+      {decisionUndo && (
+        <div className="fixed inset-x-0 bottom-32 z-40 flex justify-center px-4 sm:bottom-6">
+          <div className="inline-flex max-w-full flex-wrap items-center gap-3 rounded-2xl border border-border bg-surface px-4 py-2 text-sm shadow-lg">
+            <div className="min-w-0 flex-1 break-words">
+              <span className="text-muted" role="status">{decisionUndo.label}</span>
+              {decisionUndo.error && <p role="alert" className="text-red-600 dark:text-red-400">{decisionUndo.error}</p>}
+            </div>
+            <button type="button" onClick={() => void undoDecision(decisionUndo)} disabled={decisionUndo.busy} aria-busy={Boolean(decisionUndo.busy)} className="inline-flex shrink-0 items-center gap-1 font-medium text-brand disabled:opacity-50 max-sm:min-h-[44px]">
+              <Undo2 className="size-3.5" /> {decisionUndo.busy ? "Undoing…" : decisionUndo.error ? "Retry undo" : "Undo"}
+            </button>
+            {decisionUndo.error && (
+              <button type="button" onClick={() => setDecisionUndo(null)} aria-label="Dismiss" className="inline-flex shrink-0 items-center text-faint hover:text-muted max-sm:min-h-[44px] max-sm:min-w-[44px] max-sm:justify-center">
+                <X className="size-3.5" />
+              </button>
+            )}
+          </div>
         </div>
       )}
     </div>
