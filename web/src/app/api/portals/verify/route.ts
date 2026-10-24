@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import { careerOpsRoot, rootScript } from "@/lib/career-ops";
+import { careerOpsRoot, portalsConfigPath, rootScript } from "@/lib/career-ops";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -24,7 +24,7 @@ export async function GET() {
   if (!fs.existsSync(verifyPortals)) {
     return Response.json({ available: false, configured: false, companies: [] });
   }
-  if (!fs.existsSync(path.join(root, "portals.yml"))) {
+  if (!fs.existsSync(portalsConfigPath(root))) {
     return Response.json({ available: true, configured: false, companies: [] });
   }
 

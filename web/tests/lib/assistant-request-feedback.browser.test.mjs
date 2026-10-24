@@ -50,7 +50,7 @@ test("request feedback is transition-only, quiet when closed and user-navigated"
     if (request.method() === "PUT") { saved = { ...request.postDataJSON(), revision: ++revision, title: "Fictional feedback history" }; return route.fulfill({ json: saved }); }
     return route.fulfill({ json: new URL(request.url()).searchParams.has("id") ? saved : { chats: saved ? [{ id: saved.id, title: saved.title, revision }] : [], errors: [] } });
   });
-  await page.route("**/api/status", (route) => { writes.push(route.request().postDataJSON()); return route.fulfill({ json: { ok: true } }); });
+  await page.route("**/api/status", (route) => { writes.push(route.request().postDataJSON()); return route.fulfill({ json: { ok: true, status: route.request().postDataJSON().status } }); });
   await page.route("**/api/clis", (route) => route.fulfill({ json: { clis: [{ id: "fixture-cli", installed: true }] } }));
   await page.route("**/api/runs/save", (route) => route.fulfill({ json: { ok: true } }));
   for (const path of ["assistant", "run"]) await page.route(`**/api/${path}`, (route) => route.continue({ url: `http://127.0.0.1:${fixture.address().port}/${path}` }));

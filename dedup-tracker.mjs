@@ -5,7 +5,8 @@
  * Groups by normalized company, then merges only rows whose full role title
  * matches exactly (case- and whitespace-normalized) and whose posting URLs, when
  * both rows carry one, do not conflict. Keeps entry with highest
- * score. If discarded entry had more advanced status, preserves that status.
+ * score. If discarded entry had more advanced status, preserves that status,
+ * and runs the same status hooks set-status.mjs runs (lib/status-hooks.mjs).
  * Merges notes.
  *
  * Run: node career-ops/dedup-tracker.mjs [--dry-run]
@@ -18,7 +19,7 @@ import { getCareerOpsRoot, resolveTrackerPath } from './path-resolver.mjs';
 import { postingUrlRelation } from './url-key.mjs';
 import {
   openTrackerTransaction, rebuildRow, normalizeCompany, companiesMatchIgnoringCorporateForm,
-  MIN_STEM_CHARS, loadCanonicalStates, resolveCanonicalStateId,
+  MIN_STEM_CHARS, loadCanonicalStates, resolveCanonicalStateId, resolveCanonicalState,
 } from './tracker-utils.mjs';
 import { resolveColumns, parseTrackerRow, normalizeVia, extractReqNumber, parseScore } from './tracker-parse.mjs';
 import { validateFlags } from './lib/cli-flags.mjs';
@@ -325,6 +326,14 @@ if (!existsSync(APPS_FILE)) {
 }
 
 let trackerTransaction = null;
+let statusHooks = null;
+let localToday = null;
+let committed = false;
+const releaseClaims = [];
+// Kept rows that take over a removed duplicate's more advanced status. Each is
+// a real status change for that row number, so it gets the status hooks once
+// the write has landed.
+const promotions = [];
 let COLMAP;
 if (!DRY_RUN) {
   try {
@@ -496,7 +505,9 @@ for (const [company, companyEntries] of groups) {
         const parts = lines[lineIdx].split('|').map(s => s.trim());
         parts[COLMAP.status] = bestStatus;
         lines[lineIdx] = rebuildRow(parts);
-        console.log(`  📝 #${keeper.num}: status promoted to "${bestStatus}" (from #${cluster.find(e => e.status === bestStatus)?.num})`);
+        const donorNum = cluster.find(e => e.status === bestStatus)?.num;
+        console.log(`  📝 #${keeper.num}: status promoted to "${bestStatus}" (from #${donorNum})`);
+        promotions.push({ keeper, from: keeper.status, to: bestStatus, donorNum });
       }
     }
 
@@ -555,8 +566,32 @@ console.log(`\n📊 ${removed} duplicates removed`);
 if (!DRY_RUN && removed > 0) {
   const backupPath = `${APPS_FILE}.bak`;
   copyFileSync(APPS_FILE, backupPath);
+  // Loaded only when a status moves, so a run that just drops duplicates keeps
+  // the import closure it always had.
+  if (promotions.length > 0) {
+    statusHooks = await import('./lib/status-hooks.mjs');
+    ({ localToday } = await import('./lib/local-today.mjs'));
+    for (const p of promotions) releaseClaims.push(statusHooks.claimStatusActivity(p.keeper, `dedup-tracker → ${p.to}`));
+  }
   trackerTransaction.replace(lines.join('\n'));
   console.log(`✅ Written to ${APPS_FILE} (backup: ${backupPath})`);
+  // Inside the lock window, like set-status's own append. The removed row's
+  // history stays under its old number; this row says where the kept row's
+  // status came from. dedup-tracker did not observe the transition, it found
+  // it, so funnel-velocity counts the row but keeps it out of day-math: dated
+  // today, it would otherwise read as "applied today".
+  const ledgerState = status => resolveCanonicalState(status, CANONICAL_STATES) ?? '-';
+  for (const p of promotions) {
+    statusHooks.appendStatusTransition(APPS_FILE, {
+      num: p.keeper.num,
+      date: localToday(),
+      from: ledgerState(p.from),
+      to: ledgerState(p.to),
+      source: 'dedup-tracker',
+      note: `from #${p.donorNum}`,
+    });
+  }
+  committed = true;
 } else if (DRY_RUN) {
   console.log('(dry-run — no changes written)');
 } else {
@@ -564,4 +599,19 @@ if (!DRY_RUN && removed > 0) {
 }
 } finally {
   trackerTransaction?.close();
+}
+
+// After the tracker lock is released: both hooks re-read the row this run
+// wrote, and the follow-up seeder takes its own lock.
+try {
+  if (committed) {
+    for (const p of promotions) {
+      const to = resolveCanonicalState(p.to, CANONICAL_STATES);
+      const keeper = { ...p.keeper, status: p.to };
+      if (to === 'Applied') await statusHooks.seedFollowupOnApplied(keeper.num, { trackerPath: APPS_FILE });
+      if (to === 'Interview') statusHooks.archiveJdOnInterview(keeper, { trackerPath: APPS_FILE });
+    }
+  }
+} finally {
+  for (const release of releaseClaims) release();
 }

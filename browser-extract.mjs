@@ -45,9 +45,9 @@
 import { readFileSync, existsSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import * as yaml from 'js-yaml';
+import { loadYaml } from './lib/yaml-document.mjs';
 import { LIVENESS_CONTEXT_OPTIONS, rejectPrivateOrInvalid } from './liveness-browser.mjs';
-import { getCareerOpsRoot } from './path-resolver.mjs';
+import { getCareerOpsRoot, getProfilePath } from './path-resolver.mjs';
 import { resolveAtsApi, JD_TEXT_API_ATS } from './liveness-api.mjs';
 import { classifyLiveness } from './liveness-core.mjs';
 import { decodeEntities } from './providers/_html-entities.mjs';
@@ -91,10 +91,10 @@ const NAV_LABEL_STOPWORDS = new Set([
  * @param {string} [profilePath]
  * @returns {'cli'|'mcp'}
  */
-export function resolveExtractorMode(profilePath = join(CAREER_OPS, 'config/profile.yml')) {
+export function resolveExtractorMode(profilePath = getProfilePath()) {
   try {
     if (!existsSync(profilePath)) return 'mcp';
-    const raw = yaml.load(readFileSync(profilePath, 'utf-8')) || {};
+    const raw = loadYaml(readFileSync(profilePath, 'utf-8')) || {};
     const v = raw?.scan?.extractor;
     return v === 'cli' ? 'cli' : 'mcp';
   } catch {
@@ -691,6 +691,54 @@ async function fetchZohoJd(apiUrl, id, postingUrl, textCap, timeoutMs) {
   }
 }
 
+/** Workable full-body JD, independent of liveness state and listing text caps. */
+export function normalizeWorkableJob(json, shortcode, postingUrl, textCap = JD_TEXT_CAP) {
+  if (!json || typeof json !== 'object' || json.shortcode !== shortcode ||
+      typeof json.title !== 'string' || !json.title.trim()) return null;
+  const title = compactText(jdHtmlToText(json.title), 300);
+  if (!title) return null;
+  const blocks = [];
+  for (const [key, label] of [['description', 'Description'], ['requirements', 'Requirements'], ['benefits', 'Benefits']]) {
+    const html = typeof json[key] === 'string' ? json[key] : '';
+    // Decode before removing chrome: the API can entity-escape its HTML tags.
+    const body = jdHtmlToText(decodeEntities(html).replace(/<(nav|header|footer)\b[^>]*>[\s\S]*?<\/\1>/gi, ' '));
+    if (/[\p{L}\p{N}]/u.test(body)) blocks.push(`${label}:\n${body}`);
+  }
+  if (!blocks.length) return null;
+  return {
+    url: postingUrl,
+    title,
+    text: compactText(blocks.join('\n\n'), textCap),
+  };
+}
+
+/** Reuse the resolver's guarded share-link hop; never follow API redirects. */
+async function fetchWorkableJd(resolved, postingUrl, textCap, timeoutMs) {
+  if (rejectPrivateOrInvalid(resolved.apiUrl)) return null;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const options = {
+    headers: { accept: 'application/json', 'user-agent': DEFAULT_USER_AGENT },
+    redirect: 'error',
+    signal: controller.signal,
+  };
+  try {
+    let apiUrl = resolved.apiUrl;
+    if (resolved.followEmbed) {
+      const redirect = await fetch(apiUrl, { ...options, redirect: 'manual' });
+      apiUrl = await resolved.followEmbed(redirect, resolved.parts);
+      if (!apiUrl || rejectPrivateOrInvalid(apiUrl)) return null;
+    }
+    const res = await fetch(apiUrl, options);
+    if (!res.ok) return null;
+    return normalizeWorkableJob(await res.json(), resolved.parts.shortcode, postingUrl, textCap);
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /**
  * ats id → fetcher. THE routing table `fetchJdViaKnownApi` dispatches through,
  * exported so the owned test can assert its key set IS `JD_TEXT_API_ATS`.
@@ -706,6 +754,8 @@ async function fetchZohoJd(apiUrl, id, postingUrl, textCap, timeoutMs) {
  * the shared signature.
  */
 export const JD_FETCHERS = {
+  workable: fetchWorkableJd,
+  'workable-short': fetchWorkableJd,
   workday: (resolved, url, textCap, timeoutMs) =>
     fetchWorkdayJd(resolved.apiUrl, url, textCap, timeoutMs),
   ashby: (resolved, url, textCap, timeoutMs) =>

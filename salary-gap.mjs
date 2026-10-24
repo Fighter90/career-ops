@@ -68,9 +68,9 @@
 import { readFileSync, existsSync, readdirSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
-import { getCareerOpsRoot, resolveTrackerPath } from './path-resolver.mjs';
+import { getCareerOpsRoot, getProfilePath, resolveTrackerPath } from './path-resolver.mjs';
 import { resolveColumns, parseTrackerRow, extractTrackerReportLinks, extractTrackerReportNumbers } from './tracker-parse.mjs';
-import * as yaml from 'js-yaml';
+import { loadYaml } from './lib/yaml-document.mjs';
 import { isMainModule } from './lib/is-main-module.mjs';
 import { flagValue, hasFlag } from './lib/cli-flags.mjs';
 import { parseAmount, compensationPeriod } from './providers/_salary-text.mjs';
@@ -250,7 +250,7 @@ export function reportToObservation(content, num, date) {
 export function loadRelocationTable(tablePath = RELOCATION_TABLE_PATH) {
   if (!existsSync(tablePath)) return null;
   try {
-    const doc = yaml.load(readFileSync(tablePath, 'utf-8').replace(/\r\n/g, '\n'));
+    const doc = loadYaml(readFileSync(tablePath, 'utf-8').replace(/\r\n/g, '\n'));
     return doc?.jurisdictions && typeof doc.jurisdictions === 'object' ? doc.jurisdictions : null;
   } catch {
     return null;
@@ -1494,10 +1494,10 @@ function collectSources() {
 }
 
 function loadProfileDesired() {
-  const profilePath = join(CAREER_OPS, 'config/profile.yml');
+  const profilePath = getProfilePath();
   if (!existsSync(profilePath)) return null;
   try {
-    const profile = yaml.load(readFileSync(profilePath, 'utf-8'));
+    const profile = loadYaml(readFileSync(profilePath, 'utf-8'));
     const comp = profile?.compensation;
     if (!comp?.target_range) return null;
     return { amount: String(comp.target_range), currency: comp.currency ? String(comp.currency) : null };
@@ -1512,10 +1512,10 @@ function loadProfileDesired() {
 // throughout config/profile.example.yml; `location.city` is the fallback for
 // a profile that only fills in the structured `location:` block.
 function loadProfileLocation() {
-  const profilePath = join(CAREER_OPS, 'config/profile.yml');
+  const profilePath = getProfilePath();
   if (!existsSync(profilePath)) return null;
   try {
-    const profile = yaml.load(readFileSync(profilePath, 'utf-8'));
+    const profile = loadYaml(readFileSync(profilePath, 'utf-8'));
     const candidateLoc = profile?.candidate?.location;
     if (typeof candidateLoc === 'string' && candidateLoc.trim()) return candidateLoc.trim();
     const city = profile?.location?.city;

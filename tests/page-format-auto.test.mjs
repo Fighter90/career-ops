@@ -20,6 +20,7 @@ import {
   pageFormatForCountry,
   resolvePageFormat,
 } from '../lib/page-format.mjs';
+import { describeSpawn, exitedNonZero } from './helpers/describe-spawn.mjs';
 
 function workspace(pageFormat) {
   const dir = mkdtempSync(join(tmpdir(), 'career-ops-page-format-auto-'));
@@ -281,7 +282,7 @@ test('generate-pdf --batch: each entry takes its own country under auto', { skip
 test('generate-pdf --batch: a malformed entry country fails that entry only', { skip: !chromiumReady && 'no Chromium' }, () => {
   const dir = workspace('auto');
   const res = runBatch(dir, [entry(dir, 'a', { country: 'Germany' }), entry(dir, 'b', { country: 'DE' })]);
-  assert.notEqual(res.status, 0);
+  assert.ok(exitedNonZero(res), describeSpawn(res, 'expected a non-zero exit'));
   assert.match(res.stderr + res.stdout, /invalid country "Germany"/);
   assert.equal(mediaBox(join(dir, 'output', 'b.pdf')), '595x842');
 });

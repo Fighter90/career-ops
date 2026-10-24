@@ -38,6 +38,12 @@ function formatTaskTime(value: string | null) {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
 }
 
+const OS_SCHEDULERS: Record<string, { title: string; install: string } | undefined> = {
+  win32: { title: "Windows Task Scheduler Integration", install: "web/scripts/install-scan-schedule.ps1" },
+  darwin: { title: "macOS launchd Integration", install: "sh web/scripts/install-scan-schedule.sh" },
+  linux: { title: "Linux cron Integration", install: "sh web/scripts/install-scan-schedule.sh" },
+};
+
 export function ScheduledJobsView() {
   const [store, setStore] = useState<Store>({ jobs: [], runs: [] });
   const [scheduler, setScheduler] = useState<SchedulerStatus | null>(null);
@@ -142,6 +148,8 @@ export function ScheduledJobsView() {
   const totalRolesFound = store.runs.reduce((acc, r) => acc + (r.rolesFound || 0), 0);
   const successRate = scanSuccessLabel(totalRuns, successRuns);
 
+  const osScheduler = scheduler ? OS_SCHEDULERS[scheduler.platform] : undefined;
+
   return (
     <div className="mx-auto max-w-5xl px-5 py-8 md:px-8 space-y-8">
       {/* Header matching Explore & Portals format */}
@@ -204,7 +212,7 @@ export function ScheduledJobsView() {
               </div>
               <div>
                 <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
-                  {scheduler.platform === "win32" ? "Windows Task Scheduler Integration" : "Manual scans"}
+                  {osScheduler?.title ?? "Manual scans"}
                   <span
                     className={
                       scheduler.task.exists && scheduler.task.enabled
@@ -212,7 +220,7 @@ export function ScheduledJobsView() {
                         : "rounded bg-amber-500/15 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:text-amber-300"
                     }
                   >
-                    {scheduler.platform !== "win32"
+                    {!osScheduler
                       ? "No automatic schedule"
                       : scheduler.task.exists
                         ? scheduler.task.enabled ? "Task enabled" : "Task disabled"
@@ -220,15 +228,15 @@ export function ScheduledJobsView() {
                   </span>
                 </div>
                 <div className="mt-0.5 text-xs text-muted">
-                  {scheduler.platform !== "win32"
-                    ? "On macOS and Linux, saved scans only run when you choose Run now."
+                  {!osScheduler
+                    ? "Automatic scheduling is not available on this platform."
                     : scheduler.task.exists
                       ? "Next OS check: " + formatTaskTime(scheduler.task.nextRun) + " · Last OS check: " + formatTaskTime(scheduler.task.lastRun)
-                      : "Install the Windows task with web/scripts/install-scan-schedule.ps1 to run due jobs automatically."}
+                      : `Install with ${osScheduler.install} to run due jobs automatically.`}
                 </div>
               </div>
             </div>
-            {scheduler.platform === "win32" && <button
+            {osScheduler && <button
               type="button"
               onClick={handleTriggerOsScheduler}
               disabled={osRunning || scheduler.running || !scheduler.available}

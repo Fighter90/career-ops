@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { postingHref, postingLabel, readTrackerUrl, resolvePostingUrl } from "../../src/lib/posting-url.mjs";
+import { firstMarkdownLinkTarget, postingHref, postingLabel, readTrackerUrl, resolvePostingUrl } from "../../src/lib/posting-url.mjs";
+import { extractCellUrl, firstLinkTarget } from "../../../tracker-parse.mjs";
 
 test("readTrackerUrl returns the href and leaves a non-link cell unchanged", () => {
   const workday = "https://jobs.example.com/Engineer_(Remote)";
@@ -56,4 +57,29 @@ test("postingHref keeps spaces inside a markdown destination", () => {
     "https://jobs.example.com/a_(Remote Role)",
   );
   assert.equal(postingHref("https://jobs.example.com/1 trailing note"), "https://jobs.example.com/1");
+});
+
+test("firstMarkdownLinkTarget keeps parentheses in a report path (#5482)", () => {
+  assert.equal(
+    firstMarkdownLinkTarget("[1](../reports/001-acme-(berlin)-2026-10-01.md)"),
+    "../reports/001-acme-(berlin)-2026-10-01.md",
+  );
+  assert.equal(firstMarkdownLinkTarget("[1](<../reports/001 acme.md>)"), "../reports/001 acme.md");
+  assert.equal(firstMarkdownLinkTarget("—"), null);
+  assert.equal(firstMarkdownLinkTarget(undefined), null);
+});
+
+test("link targets match tracker-parse.mjs, escaped angle brackets included", () => {
+  const cells = [
+    "[1](../reports/001-acme-(berlin)-2026-10-01.md)",
+    "[1](<../reports/001-a\\>>)",
+    "[job](<https://jobs.example.test/file\\>>)",
+    "[job](https://jobs.example.test/a_(remote))",
+    "—",
+  ];
+  for (const cell of cells) {
+    assert.equal(firstMarkdownLinkTarget(cell), firstLinkTarget(cell), cell);
+    assert.equal(readTrackerUrl(cell), extractCellUrl(cell), cell);
+  }
+  assert.equal(firstMarkdownLinkTarget("[1](<../reports/001-a\\>>)"), "../reports/001-a>");
 });

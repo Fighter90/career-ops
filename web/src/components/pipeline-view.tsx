@@ -1,9 +1,9 @@
 "use client";
 
-import { startTransition, useCallback, useEffect, useMemo, useOptimistic, useRef, useState, useTransition } from "react";
+import { startTransition, useCallback, useDeferredValue, useEffect, useMemo, useOptimistic, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Search, ChevronsUpDown, X, Compass, ArrowRight, ExternalLink } from "lucide-react";
+import { Search, ChevronsUpDown, X, Compass, ArrowRight, ExternalLink, Download } from "lucide-react";
 import type { Application, InboxJob } from "@/lib/career-ops";
 import { Badge } from "@/components/ui/badge";
 import { CompanyLogo } from "@/components/company-logo";
@@ -20,6 +20,7 @@ import { PageFrame } from "@/components/page-frame";
 import { PIPELINE_TABS, pipelineQuery, pipelineTab } from "@/lib/pipeline-navigation.mjs";
 import { COMPARE_MAX } from "@/lib/pipeline-compare.mjs";
 import { postingHref, postingLabel } from "@/lib/posting-url.mjs";
+import { trackerCsv, trackerCsvFilename } from "@/lib/tracker-csv.mjs";
 
 type Tab = (typeof PIPELINE_TABS)[number];
 
@@ -100,6 +101,12 @@ export function PipelineView({
     if (!isPending) setPendingTab(null);
   }, [isPending]);
 
+  // The table filters on a deferred copy of the search text. The input shows
+  // each keystroke at once; re-filtering and re-rendering every tracker row
+  // runs at low priority, and React drops a stale render when the next
+  // keystroke arrives, so typing no longer waits on the whole table.
+  const deferredQ = useDeferredValue(q);
+
   const filtered = useMemo(() => {
     if (tab === "INBOX") return [];
     let rows = visibleApplications;
@@ -110,8 +117,8 @@ export function PipelineView({
         return !Number.isNaN(n) && n >= minFilter;
       });
     }
-    if (q.trim()) {
-      const needle = q.toLowerCase();
+    if (deferredQ.trim()) {
+      const needle = deferredQ.toLowerCase();
       rows = rows.filter((r) => companySearchText(r).toLowerCase().includes(needle));
     }
     // scoreNum is the real score parser (it handles the tracker's "4.2/5"
@@ -122,7 +129,7 @@ export function PipelineView({
       scoreNum,
       (row) => companyPresentation(row).label,
     ) as Application[];
-  }, [visibleApplications, tab, q, sort, minFilter]);
+  }, [visibleApplications, tab, deferredQ, sort, minFilter]);
 
   const filteredKeys = filtered.map(applicationKey);
   const selectedRows = filtered.filter((r) => selected.has(applicationKey(r)));
@@ -135,6 +142,15 @@ export function PipelineView({
       else next.add(key);
       return next;
     });
+  }
+
+  function downloadCsv() {
+    const url = URL.createObjectURL(new Blob([trackerCsv(filtered)], { type: "text/csv;charset=utf-8" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = trackerCsvFilename(tab, new Date());
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
   async function applyBulkStatus() {
@@ -163,14 +179,26 @@ export function PipelineView({
         </div>
         {/* the tracker has its own search; the inbox brings its own facet filters */}
         {visibleTab !== "INBOX" && (
-          <div className="relative w-64 max-w-[40vw]">
-            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-faint" />
-            <input
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              placeholder="Search company or role…"
-              className="w-full rounded-md border border-border bg-surface/60 py-2 pl-9 pr-3 text-sm outline-none transition-colors placeholder:text-faint focus:border-brand/50 focus-visible:ring-2 focus-visible:ring-brand/40"
-            />
+          <div className="flex items-center gap-2">
+            <div className="relative w-64 max-w-[40vw]">
+              <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-faint" />
+              <input
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                placeholder="Search company or role…"
+                className="w-full rounded-md border border-border bg-surface/60 py-2 pl-9 pr-3 text-sm outline-none transition-colors placeholder:text-faint focus:border-brand/50 focus-visible:ring-2 focus-visible:ring-brand/40"
+              />
+            </div>
+            <button
+              type="button"
+              onClick={downloadCsv}
+              disabled={isPending || filtered.length === 0}
+              title={`Download the ${filtered.length} row${filtered.length === 1 ? "" : "s"} shown as a CSV file`}
+              className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-md border border-border bg-surface/60 px-3 py-2 text-sm text-muted transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-brand/40 disabled:cursor-not-allowed disabled:opacity-50 max-sm:min-h-[44px] max-sm:min-w-[44px] max-sm:justify-center max-sm:px-0"
+            >
+              <Download aria-hidden="true" className="size-4" />
+              <span className="max-sm:sr-only">Download CSV</span>
+            </button>
           </div>
         )}
       </div>

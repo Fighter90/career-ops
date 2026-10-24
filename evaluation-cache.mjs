@@ -4,7 +4,8 @@ import { readFileSync, readdirSync, lstatSync, realpathSync, writeFileSync, chmo
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { parseArgs } from 'node:util';
-import { load, JSON_SCHEMA } from 'js-yaml';
+import { JSON_SCHEMA } from 'js-yaml';
+import { loadYaml } from './lib/yaml-document.mjs';
 import { getCareerOpsRoot } from './path-resolver.mjs';
 import { acquireTrackerLock, trackerLockDirFor, renameSyncWithRetry } from './tracker-utils.mjs';
 import { isMainModule } from './lib/is-main-module.mjs';
@@ -47,7 +48,7 @@ function machineSummary(markdown) {
   const raw = match[2];
   const rawStart = start + match[0].indexOf(raw);
   try {
-    const summary = load(raw, { schema: JSON_SCHEMA });
+    const summary = loadYaml(raw, { schema: JSON_SCHEMA });
     return isObject(summary) ? { summary, raw, rawStart } : null;
   } catch { return null; }
 }
@@ -187,7 +188,7 @@ export async function invalidateJobFacts({ reportsDir = join(getCareerOpsRoot(),
       const replacement = `job_facts_cache: ${JSON.stringify(meta)}\n`;
       const updated = raw.replace(block, () => replacement);
       // Reject YAML aliases or unusual layout instead of risking a broader rewrite.
-      const reparsed = load(updated, { schema: JSON_SCHEMA });
+      const reparsed = loadYaml(updated, { schema: JSON_SCHEMA });
       const expected = { ...record.parsed.summary, job_facts_cache: meta };
       if (JSON.stringify(reparsed) !== JSON.stringify(expected)) throw new Error('cache metadata cannot be updated safely');
       const start = record.parsed.rawStart;

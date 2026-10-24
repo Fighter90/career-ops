@@ -118,8 +118,18 @@ try {
   fail(`migration fixture git setup: ${error.message}`);
 }
 
-function extractArray(name) {
-  const match = source.match(new RegExp(`const\\s+${name}\\s*=\\s*\\[([\\s\\S]*?)\\];`));
+// The system list moved to lib/update-manifest.mjs (#5554); the user and
+// bootstrap lists are still in update-system.mjs.
+let manifestSource = '';
+try {
+  manifestSource = readFileSync('lib/update-manifest.mjs', 'utf-8');
+  pass('lib/update-manifest.mjs is readable');
+} catch (error) {
+  fail(`lib/update-manifest.mjs is readable: ${error.message}`);
+}
+
+function extractArray(name, from = source) {
+  const match = from.match(new RegExp(`const\\s+${name}\\s*=\\s*\\[([\\s\\S]*?)\\];`));
   if (!match) {
     fail(`${name} array exists`);
     return [];
@@ -128,7 +138,7 @@ function extractArray(name) {
   return Array.from(match[1].matchAll(/['"]([^'"]+)['"]/g), (entry) => entry[1]);
 }
 
-const systemPaths = extractArray('SYSTEM_PATHS');
+const systemPaths = extractArray('SYSTEM_PATHS', manifestSource);
 const userPaths = extractArray('USER_PATHS');
 const bootstrapPaths = extractArray('BOOTSTRAP_PATHS');
 
@@ -440,8 +450,8 @@ const twoPassManifestChecks = [
     pattern: /git\('show',\s*`\$\{targetCommit\}:update-system\.mjs`\)/,
   },
   {
-    name: 'apply extracts SYSTEM_PATHS from the target updater',
-    pattern: /extractArrayFromSource\([^,]+,\s*'SYSTEM_PATHS'\)/,
+    name: 'apply reads SYSTEM_PATHS from the pinned target, module first (#5554)',
+    pattern: /manifestSystemPathsAt\(targetCommit\)/,
   },
   {
     name: 'apply merges local and target system manifests',
@@ -590,8 +600,10 @@ const twoPassManifestChecks = [
     // thrown probe, a timeout or a permission error must rethrow, not report
     // success (#1998). The catch must NOT set `absentUpstream` any other way:
     // an inline `catch { absentUpstream = true }` is exactly the regression.
+    // The rethrow sits in a block because the paths already checked out are
+    // restored first; the branch must still end in `throw err`.
     name: 'the checkout catch derives absentUpstream only from probeAbsentUpstream (#1998, #3824)',
-    pattern: /const absentUpstream = probeAbsentUpstream\(spec, targetCommit\);\s*if \(!checkoutErrorIsBenign\(err, \{ absentUpstream, preservedState \}\)\) throw err;/,
+    pattern: /const absentUpstream = probeAbsentUpstream\(spec, targetCommit\);\s*if \(!checkoutErrorIsBenign\(err, \{ absentUpstream, preservedState \}\)\) \{[\s\S]{0,1200}?\n\s*throw err;\s*\n\s*\}/,
   },
   {
     name: 'the checkout catch never assigns absentUpstream = true directly (#1998 regression)',
@@ -618,8 +630,10 @@ const twoPassManifestChecks = [
     pattern: /if \(protectedPaths\.has\(file\)\) continue;/,
   },
   {
-    name: 'revertPaths receives the pre-update snapshot at its call sites (#2015)',
-    pattern: /revertPaths\(updated, initialStatusPaths\)/,
+    // The preserved files ride along: a bare `git checkout HEAD -- <dir>` would
+    // reset an uncommitted edit the update had kept out of its checkout (#2337).
+    name: 'revertPaths receives the pre-update snapshot and the preserved files at its call sites (#2015)',
+    pattern: /revertPaths\(updated, initialStatusPaths, \{ exclude: preservedPaths \}\)/,
   },
   {
     // -z output is NUL-delimited/unquoted, so a path with spaces or newlines is
@@ -713,8 +727,9 @@ if (appearsInOrder(applySource, [pairCall, 'pruneStaleTargetRefs();'])) {
 
 if (appearsInOrder(applySource, [
   pairCall,
-  "remoteUpdaterSource = git('show', `${targetCommit}:update-system.mjs`);",
-  "remoteSystemPaths = assertCanonicalManifestPaths(remoteSystemPaths, 'Target SYSTEM_PATHS');",
+  "git('show', `${targetCommit}:update-system.mjs`);",
+  'manifestSystemPathsAt(targetCommit)',
+  "remoteSystemPaths = assertCanonicalManifestPaths(remoteSystemPaths, `Target SYSTEM_PATHS (${remoteManifestFile})`);",
   'const validatedManifestPaths = assertCanonicalManifestPaths(',
   "'Merged updater manifest',",
   "resolveReexecCheckout(targetCommit, 'update-system.mjs')",
@@ -733,6 +748,7 @@ if (appearsInOrder(rollbackSource, [
   'targetRef = targetRefForBackup(latest);',
   "git('show-ref', '--verify', '--quiet', targetRef);",
   "git('show', `${targetRef}:update-system.mjs`);",
+  'manifestSystemPathsAt(targetRef)',
   'manifestTreeFiles(safeTargetPaths, targetRef, userPaths,',
 ]) && !/\b(?:git|gitQuiet|gitShowRaw)\([^)]*\bFETCH_HEAD\b[^)]*\)/s.test(rollbackSource)) {
   pass('rollback derives target removals only from the durable backup-paired ref, never FETCH_HEAD');

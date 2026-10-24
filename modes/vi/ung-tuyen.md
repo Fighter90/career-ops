@@ -2,7 +2,7 @@
 
 > Áp dụng `voice-dna.md` (nếu có) cho các câu trả lời tự do và ô cover letter -- đầy đủ guardrail, gồm cả giọng hội thoại (Tier 1 + Tier 2). Xem `_writing.md` → Voice DNA.
 
-Mode tương tác dành cho lúc ứng viên đang điền form ứng tuyển trên Chrome. Mode đọc những gì đang hiển thị trên màn hình, nạp ngữ cảnh đánh giá trước đó của tin, và tạo câu trả lời cá nhân hóa cho từng câu hỏi trong form.
+Mode tương tác dành cho lúc ứng viên đang điền form ứng tuyển trên trình duyệt Playwright do dự án này mở. Mode đọc những gì đang hiển thị trên màn hình, nạp ngữ cảnh đánh giá trước đó của tin, và tạo câu trả lời cá nhân hóa cho từng câu hỏi trong form.
 
 > Tệp này là bản rút gọn bằng tiếng Việt của `modes/apply.md`. Các phần đặc thù ATS (mục "Known ATS Quirks": Ashby, Lever, Workable, Workday, SuccessFactors, widget react-select, `<select>` rất lớn) và các bước nâng cao khác vẫn đọc từ `modes/apply.md` khi cần. Quy tắc bắt buộc nằm ở đây; quy tắc hai bên không được mâu thuẫn.
 
@@ -14,7 +14,7 @@ Mode tương tác dành cho lúc ứng viên đang điền form ứng tuyển tr
 ## Quy trình
 
 ```text
-1. DETECT      → Đọc tab Chrome đang hoạt động (ảnh chụp/URL/tiêu đề)
+1. DETECT      → Mở tin trong trình duyệt Playwright của dự án này
 2. IDENTIFY    → Trích công ty + vai trò từ trang
 3. SEARCH      → Đối chiếu với các báo cáo hiện có trong reports/
 4. LOAD        → Đọc báo cáo đầy đủ + Block H / Application Answers (nếu có)
@@ -27,6 +27,11 @@ Mode tương tác dành cho lúc ứng viên đang điền form ứng tuyển tr
 8. PRESENT     → Hiển thị câu trả lời đã định dạng để sao chép
 9. PERSIST     → Lưu các câu trả lời cuối cùng vào báo cáo
 ```
+
+## Scope
+
+Follow the Scope section in `modes/apply.md`. Run `node apply-scope.mjs root` and stay inside the directories it prints. Launch with `node apply-scope.mjs launch-options`. Do not read `DevToolsActivePort` or attach to an existing browser. Do not submit the form.
+
 
 ## Bước 5 — Cổng preflight
 
@@ -75,7 +80,7 @@ Không sang Bước 6 cho đến khi preflight được giải quyết.
 
 ## Bước 1 — Phát hiện tin
 
-**Với Playwright:** chụp snapshot trang hiện tại. Đọc tiêu đề, URL và nội dung hiển thị.
+**Với Playwright:** Chạy `node apply-scope.mjs launch-options`, mở tin trong cửa sổ đó, rồi đọc tiêu đề, URL và nội dung hiển thị.
 
 **Không có Playwright:** yêu cầu ứng viên:
 - Chia sẻ ảnh chụp màn hình form (công cụ Read đọc được ảnh)

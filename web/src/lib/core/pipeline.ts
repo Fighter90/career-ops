@@ -4,6 +4,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { careerOpsRoot, rootScript } from "@/lib/career-ops";
 import type { DiscoveredOffer } from "./scan";
+import { pipelineWriterResult } from "./pipeline-writer-result.mjs";
 
 /**
  * "Add to pipeline" — appends user-selected discovered offers to data/pipeline.md
@@ -74,14 +75,7 @@ process.stdin.on("end", async () => {
     child.stdout.on("data", (d: Buffer) => (out += d.toString()));
     child.stderr.on("data", (d: Buffer) => (err += d.toString()));
     child.on("error", (e) => resolve({ added: 0, error: e instanceof Error ? e.message : "spawn failed" }));
-    child.on("close", () => {
-      try {
-        const parsed = JSON.parse(out.trim() || "{}") as AddResult;
-        resolve({ added: parsed.added ?? 0, error: parsed.error });
-      } catch {
-        resolve({ added: 0, error: err.trim().slice(0, 200) || "writer returned no result" });
-      }
-    });
+    child.on("close", (code, signal) => resolve(pipelineWriterResult(out, err, { code, signal })));
     child.stdin.write(JSON.stringify(clean));
     child.stdin.end();
   });

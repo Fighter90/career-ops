@@ -395,6 +395,27 @@ export function buildHtml(payload, templatePath) {
   return rendered;
 }
 
+/**
+ * Answers and other text the candidate supplied for this letter.
+ *
+ * Read `user_inputs` (the list cover mode writes) and `answers` (the same
+ * texts as an object). Do not read `letter`: the draft is the document under
+ * check, and a sentence that appears only there must not support itself.
+ *
+ * @param {object} [payload]
+ * @returns {string[]}
+ */
+export function letterInputTexts(payload = {}) {
+  return [...collectInputText(payload?.user_inputs), ...collectInputText(payload?.answers)];
+}
+
+function collectInputText(value) {
+  if (typeof value === 'string') return value.trim() ? [value] : [];
+  if (Array.isArray(value)) return value.flatMap(collectInputText);
+  if (value && typeof value === 'object') return Object.values(value).flatMap(collectInputText);
+  return [];
+}
+
 /** Parse a payload, run the fact gate, and render the cover-letter PDF. */
 async function main() {
   const { values: args } = parseArgs({
@@ -469,7 +490,10 @@ Usage:
     // Cover letters are candidate-facing documents too. Reuse the CV fact
     // validator before importing Playwright or writing a PDF so a failed gate
     // cannot leave behind a misleading artifact.
-    const factCheck = assertFacts(html, { label: "cover letter" });
+    const factCheck = assertFacts(html, {
+      label: "cover letter",
+      planTexts: letterInputTexts(payload),
+    });
     // Ahead of the verdict, because it qualifies it: with no config the phrase
     // lists are empty, so a silent gate here covers metrics and facts only.
     if (factCheck.configMissing) {

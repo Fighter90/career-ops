@@ -50,7 +50,7 @@ Các mode còn lại (`scan`, `batch`, `pdf`, `tracker`, `auto-pipeline`, `deep`
 
 Cố ý không dịch vì script hoặc giao diện web đọc theo tên:
 
-- Tiêu đề cấp 2 của báo cáo (`Machine Summary`, `Risk Summary`, `A) ...` đến `H) ...`, và dấu `(lead)` của khối kết luận) cùng các nhãn header `**Date:**`, `**URL:**`, `**Archetype:**`, `**Score:**`, `**Legitimacy:**`, `**Work Auth:**`, `**PDF:**`
+- Tiêu đề cấp 2 của báo cáo (`Machine Summary`, `Risk Summary`, `A) ...` đến `H) ...`, và dấu `(lead)` của khối kết luận) cùng các nhãn header `**Date:**`, `**URL:**`, `**Archetype:**`, `**Score:**`, `**Legitimacy:**`, `**Work Auth:**`, `**PDF:**`. Nhãn quyết định là `**Quyết định:**` và được `web/src/lib/report-header.mjs` đọc như Decision.
 - Tên cột bảng Block B (`Requirement`, `Importance`, `Match`, `JD signal`, `Evidence / gap`) và bảng `| Signal | Status |` của Risk Summary
 - Khóa YAML và giá trị enum trong Machine Summary
 - Tiêu đề mục `## Pending` / `## Processed` trong `data/pipeline.md` (vì `scan.mjs` và `reconcile-pipeline.mjs` chỉ nhận cách viết tiếng Anh và tiếng Tây Ban Nha)

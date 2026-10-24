@@ -1,4 +1,7 @@
 import { canonStatus } from "./status-alias.mjs";
+// One definition of "a rate with no denominator is absent", shared with the
+// Progress view rather than copied: web/src/lib/analytics/view-model.mjs.
+import { rateOrNull } from "./analytics/view-model.mjs";
 
 const STAGE_ORDER = ["TRACKED", "APPLIED", "RESPONDED", "INTERVIEW", "OFFER"];
 const SCORE_BUCKETS = [
@@ -110,9 +113,16 @@ export function computeProgressMetrics(applications = [], achievements) {
     totalOffers: achievements?.offers ?? totalOffers,
     funnel,
     scoreDistribution,
-    responseRate: percentage(responded, applied),
-    interviewRate: percentage(interview, applied),
-    offerRate: percentage(offer, applied),
+    // null, not 0, when nothing has been applied to. percentage() answers 0 for
+    // a zero denominator, and the view printed that as "0.0%" — telling a user
+    // who has evaluated roles but applied to none that no employer replied to
+    // them. A rate taken over nothing is absent, not measured. A REAL zero (0
+    // of 12 replied) still prints, because the gate reads the denominator and
+    // never the rate's own value.
+    ratesDenominator: applied,
+    responseRate: rateOrNull(percentage(responded, applied), applied),
+    interviewRate: rateOrNull(percentage(interview, applied), applied),
+    offerRate: rateOrNull(percentage(offer, applied), applied),
     weeklyActivity,
   };
 }

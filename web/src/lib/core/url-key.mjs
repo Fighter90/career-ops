@@ -36,6 +36,15 @@ const TRACKING_PARAMS = [
 ];
 
 /**
+ * Match the core URL key's DNS-root-label normalization: one trailing dot
+ * names the same host, but two trailing dots must not be silently repaired.
+ */
+function foldHostname(host) {
+  const h = String(host).toLowerCase();
+  return h.length > 1 && h.endsWith(".") && !h.endsWith("..") ? h.slice(0, -1) : h;
+}
+
+/**
  * Promote a known identity-bearing SPA fragment into a functional query key
  * before generic URL normalization drops the fragment. Most fragments are
  * presentation-only. The narrow exceptions are recognized `#/job/{id}` and
@@ -79,7 +88,7 @@ export function normalizeUrl(raw) {
   if (u.protocol !== "http:" && u.protocol !== "https:") return "";
 
   u.protocol = "https:";
-  u.hostname = u.hostname.toLowerCase();
+  u.hostname = foldHostname(u.hostname);
   promoteKnownFragmentIdentity(u);
   u.hash = "";
 

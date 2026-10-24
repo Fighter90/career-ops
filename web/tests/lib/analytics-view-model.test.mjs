@@ -149,6 +149,50 @@ test("the ATS panel makes no claim below the core's own sample bar", () => {
   assert.equal(v2.citation, "Bommasani et al.", "the core's citation travels with the claim");
 });
 
+test("a vendor row below the sample threshold shows its count but claims no rate", () => {
+  // THE CASE. `identified >= minSampleForClaim` makes the PANEL claimable, and
+  // says nothing about one vendor inside it. 19 Greenhouse applications and 1
+  // Lever one is a claimable panel in which Lever reads 100% — five times
+  // Greenhouse's 20% — off a single application the core explicitly marked
+  // `sufficientSample: false`.
+  const model = statsModel({
+    vendorAnalysis: {
+      identified: 20, minSampleForClaim: 8, coveragePct: 90,
+      breakdown: [
+        { vendor: "greenhouse", total: 19, advanceRate: 20, sufficientSample: true },
+        { vendor: "lever", total: 1, advanceRate: 100, sufficientSample: false },
+      ],
+    },
+  });
+  const v = model.sections.find((s) => s.key === "vendor");
+  assert.equal(v.claimable, true, "the panel itself is claimable; that is the point");
+
+  const [gh, lever] = v.rows;
+  assert.equal(gh.advanceRate, 20, "a vendor with enough applications keeps its rate");
+  assert.equal(gh.provisional, false);
+
+  assert.equal(lever.advanceRate, null, "one application is not a 100% advance rate");
+  assert.equal(lever.provisional, true);
+  // The row must not disappear — the user should still see that Lever was used
+  // once. Only the RATE is withheld.
+  assert.equal(lever.total, 1);
+  assert.equal(lever.vendor, "lever");
+});
+
+test("a row with no sufficientSample signal at all is treated as insufficient", () => {
+  // The signal being absent is not the core saying the sample is fine. Same
+  // direction as ThresholdSection's `provisional: t.sufficientSample !== true`.
+  const model = statsModel({
+    vendorAnalysis: {
+      identified: 12, minSampleForClaim: 8, coveragePct: 80,
+      breakdown: [{ vendor: "greenhouse", total: 12, advanceRate: 40 }],
+    },
+  });
+  const v = model.sections.find((s) => s.key === "vendor");
+  assert.equal(v.rows[0].provisional, true);
+  assert.equal(v.rows[0].advanceRate, null);
+});
+
 test("isUnlabelled covers every way the core says it does not know", () => {
   for (const s of ["", "  ", "Unknown", "unknown", "N/A", "—", "-"]) assert.equal(isUnlabelled(s), true, s);
   for (const s of ["greenhouse", "remote", "IC", "0"]) assert.equal(isUnlabelled(s), false, s);

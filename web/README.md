@@ -16,11 +16,18 @@ Requires Node 22.6+ (see [Tests](#tests) — `npm test` needs glob discovery, an
 ```bash
 cd web
 npm ci
-npm run dev
+npm run build
+npm start
 ```
 
 Open http://localhost:3000. The app reads the career-ops checkout it lives in
 (the parent directory) — your existing CV, pipeline and reports appear as-is.
+
+`npm start` serves the production build, which is the one to use day to day.
+Run `npm run build` again after updating career-ops so the app picks up the new
+code. `npm run dev` is for working on the web UI itself (see
+[Development](#development)): it compiles each page on first visit and checks
+for changes as you go, so it is noticeably slower to use.
 
 The server binds IPv4 loopback, so reach it as `localhost` or `127.0.0.1`;
 `http://[::1]:3000` has nothing listening on it.
@@ -32,7 +39,7 @@ The server binds IPv4 loopback, so reach it as `localhost` or `127.0.0.1`;
 - **Explore** — the free reverse-ATS scan with an honest partial-dataset
   indicator, plus AI-assisted discovery (bring your own CLI/keys, including Grok Build CLI).
 - **Scheduled scans** — save local zero-token or full-dataset scans and run due
-  jobs through an optional Windows Task Scheduler worker.
+  jobs through an optional worker on Windows, macOS or Linux.
 - **Apply** — assisted form prefill with a hard rule inherited from the core:
   **it never submits for you** — you always press the button.
 - **Today / Analytics / CV / Config** — action queue, funnel + pipeline Sankey,
@@ -61,18 +68,25 @@ The server binds IPv4 loopback, so reach it as `localhost` or `127.0.0.1`;
 - **Additive:** the web is isolated from the core's packaging, CI and release
   automation. The CLI works exactly the same without it.
 
-## Scheduled scans on Windows
+## Scheduled scans
 
-Automatic recurring scans through Task Scheduler are Windows-only. On macOS and Linux,
-saved scans run only when you choose **Run now** on the Scheduled scans page.
 The web UI can save scan definitions without installing an OS task. To check and
-run due jobs every 15 minutes, install the local worker from the repository root:
+run due jobs every 15 minutes, install the local worker from the repository root.
+On Windows:
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File web/scripts/install-scan-schedule.ps1
 ```
 
-Remove it with `web/scripts/uninstall-scan-schedule.ps1`. It runs in the current user's interactive session, so the user must be logged in. The task runs only
+On macOS and Linux:
+
+```sh
+sh web/scripts/install-scan-schedule.sh
+```
+
+Remove it with `web/scripts/uninstall-scan-schedule.ps1` on Windows or
+`sh web/scripts/uninstall-scan-schedule.sh` on macOS and Linux. It runs as the
+current user (never as root), and Windows and macOS need a logged-in session. The task runs only
 `web/scripts/scheduled-jobs-runner.mjs`; it never evaluates roles, applies, or invokes
 an AI model. Job definitions and run history stay in the gitignored `data/`
 directory.
@@ -92,7 +106,7 @@ Root scripts such as `doctor.mjs` run from the checkout that holds `web/`, not
 from `CAREER_OPS_ROOT`; set `CAREER_OPS_CODE_ROOT` when the app runs outside it.
 
 Every route but build assets is gated by the same-origin + loopback guard in
-`src/lib/origin-guard.mjs`. Two opt-ins widen it, both unset by default and both in `web/.env.local`:
+`src/lib/origin-guard.mjs`. Two opt-ins widen it, both unset by default:
 `CAREER_OPS_WEB_ALLOWED_HOSTS` names extra non-loopback hosts the dashboard may
 answer on, and `CAREER_OPS_ALLOWED_ORIGINS` names origins allowed to call the
 API from outside the app — a comma- or space-separated list, no trailing slash.
@@ -100,6 +114,12 @@ The second is what a local companion client needs: a browser extension calls
 from a `chrome-extension://` origin, which Fetch Metadata always reports as
 `cross-site`, so the guard refuses it unless the id is named here. The host
 layer still applies to an allowlisted origin.
+
+`CAREER_OPS_ALLOWED_ORIGINS` can live in `web/.env.local`.
+`CAREER_OPS_WEB_ALLOWED_HOSTS` cannot: it also picks the bind address, which the
+launcher (`server.mjs`, or `npm run ui` from the repository root) reads from the
+shell environment before Next.js loads `web/.env.local`
+(see [below](#exposing-it-beyond-this-machine)).
 
 Pass one-off flags through npm's `--`: `npm run dev -- -p 4000`.
 
@@ -113,6 +133,11 @@ loopback and the hosts you named:
 ```bash
 CAREER_OPS_WEB_ALLOWED_HOSTS="192.168.1.50" npm run dev
 ```
+
+Set it in the environment of `npm run dev`, `npm start` or `npm run ui`, as above
+or with `export`. The launcher chooses the bind before Next.js reads `web/.env.local`, so
+a value written only there reaches the guard but not the bind: the server stays on
+`127.0.0.1` and the startup line says `loopback only`.
 
 It is not an on/off switch, and it is not read as one: `off`, `false`, `no` and
 `0` are all valid hostnames, so treating them as words would have opened the
@@ -215,12 +240,11 @@ Three constraints follow from all this:
   coverage and never execute. Extract the logic under test into a plain `.mjs`
   module (the pattern `src/lib/pdf-paths.mjs` and `src/lib/pdf-render.mjs`
   already follow) and import it from the test.
-- **Web suites use `node:test`; core suites don't.** Here you write
-  `import { test } from "node:test"` with `node:assert/strict`. The root
-  `tests/` suite deliberately uses neither — it has its own `pass`/`fail`
-  helpers, because [#1440](https://github.com/career-ops-hq/career-ops/issues/1440)
-  requires the core suite to run on a bare clone with "no framework, not even
-  `node:test`". Don't carry either style across the boundary.
+- **Web suites use `node:test`.** Here you write
+  `import { test } from "node:test"` with `node:assert/strict`. Don't import the
+  root `tests/helpers.mjs` `pass`/`fail` helpers; they belong to the root
+  `tests/` suite, where `test-all.mjs` runs both those and `node:test` suites
+  ([#2463](https://github.com/career-ops-hq/career-ops/issues/2463)).
 
 `tests/web-test-layout.test.mjs` in the **root** suite enforces all of the above
 on every PR, including that `npm test` never goes back to listing suites by name

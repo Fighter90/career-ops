@@ -25,7 +25,9 @@
  *   the view explains itself or stays quiet.
  * @typedef {{available: boolean, reason: "no-core"|"no-data"|null, totals: ProgressTotals, funnel: {stages: FunnelStage[], rates: FunnelRate[]}, provisional: boolean}} ProgressModel
  *
- * @typedef {Record<string, string|number|undefined>} BreakdownRow
+ * @typedef {Record<string, string|number|boolean|null|undefined>} BreakdownRow
+ *   A `null` numeric means the core had a value but it is not claimable yet
+ *   (too small a sample); `provisional: true` marks such a row.
  * @typedef {{key: "threshold", label: string, value: number|null, note: string|null, sampleSize: number|null, provisional: boolean}} ThresholdSection
  * @typedef {{key: string, label: string, rows: BreakdownRow[], dimension: string, partial: boolean}} BreakdownSection
  * @typedef {{key: "vendor", label: string, rows: BreakdownRow[], claimable: boolean, coveragePct: number, minSampleForClaim: number, identified: number, citation: string|null}} VendorSection
@@ -179,7 +181,25 @@ export function statsModel(patterns) {
     sections.push({
       key: "vendor",
       label: "By ATS vendor",
-      rows: enough ? v.breakdown : [],
+      // Per ROW, not just per panel. `enough` above is an aggregate — enough of
+      // the pipeline was identified for the panel to make any claim — and it
+      // says nothing about an individual vendor. The core marks each row
+      // `sufficientSample: total >= minSampleForClaim`, so a user with 19
+      // Greenhouse applications and 1 Lever one gets a claimable panel in which
+      // Lever reads 100%. Rendering that beside Greenhouse's 20% invites
+      // exactly the wrong conclusion, and it is the hedged-figure-made-confident
+      // failure this module exists to prevent.
+      //
+      // Same treatment ThresholdSection already gives it: null the value and
+      // flag the row. The count still shows, so the row does not vanish — the
+      // user sees "lever 1 —" and knows a rate is not yet available.
+      // An absent `sufficientSample` counts as insufficient: the signal missing
+      // is not the core saying the sample is fine.
+      rows: enough ? v.breakdown.map((r) => ({
+        ...r,
+        advanceRate: r?.sufficientSample === true ? r.advanceRate : null,
+        provisional: r?.sufficientSample !== true,
+      })) : [],
       claimable: enough,
       coveragePct: Number.isFinite(v.coveragePct) ? v.coveragePct : 0,
       minSampleForClaim: need,

@@ -17,7 +17,7 @@
 import { mkdirSync, writeFileSync, rmSync, existsSync, readdirSync, readFileSync } from 'fs';
 import { join, resolve } from 'path';
 import { pass, fail, makeUpdaterRepo } from './helpers.mjs';
-import { locallyModifiedSystemFiles, commitPathspecs } from '../update-system.mjs';
+import { locallyModifiedSystemFiles, commitPathspecs, updateCommitCommand } from '../update-system.mjs';
 
 const WINDOWS_ARGV_LIMIT = 32767;
 
@@ -268,12 +268,20 @@ if (NAMES.join(' ').length > WINDOWS_ARGV_LIMIT) {
     fail(`#7 pathspec files collided: ${listFile} vs ${otherFile}`);
   }
   rmSync(resolve(repo.dir, otherFile), { force: true });
-  // The hint's own command, with the same quoting apply() prints.
-  const recovery = ['commit', '-m', 'chore: auto-update system files to v2', `--pathspec-from-file=${listFile}`, '--pathspec-file-nul'];
+  // Exercise the same formatter apply() uses, reusing the failed commit's file
+  // rather than writing another copy or expanding the paths back onto argv.
+  const hint = updateCommitCommand('2', false, NAMES, {
+    pathspecFile: listFile,
+    git: () => { throw new Error('the failed commit already wrote the file'); },
+  });
+  const match = hint.match(/^git commit -m "([^"]+)" "--pathspec-from-file=([^"]+)" --pathspec-file-nul$/);
+  const recovery = match && ['commit', '-m', match[1], `--pathspec-from-file=${match[2]}`, '--pathspec-file-nul'];
   let recovered = false;
   try {
-    repo.g(...recovery);
-    recovered = true;
+    if (match?.[2] === listFile) {
+      repo.g(...recovery);
+      recovered = true;
+    }
   } catch {
     recovered = false;
   }
@@ -283,10 +291,41 @@ if (NAMES.join(' ').length > WINDOWS_ARGV_LIMIT) {
   } else {
     fail(`#7 recovery ${recovered ? `committed ${committed.length} path(s)` : 'failed'}`);
   }
-  const hintChars = ['git', ...recovery].join(' ').length;
+  const hintChars = hint.length;
   if (hintChars < WINDOWS_ARGV_LIMIT) {
     pass(`the recovery command is ${hintChars} chars, runnable under the Windows ceiling`);
   } else {
     fail(`#7 recovery command is ${hintChars} chars`);
+  }
+}
+
+// A withheld scoped commit has no failed commit file yet. Its printed command
+// must also fit on Windows and leave unrelated staged work out of the commit.
+{
+  const repo = makeRepo();
+  writeAll(repo, 'v2');
+  repo.g('add', '--', 'bulk/');
+  writeFileSync(join(repo.dir, 'mine.txt'), 'user work\n');
+  repo.g('add', 'mine.txt');
+  const calls = [];
+  const hint = updateCommitCommand('2', false, NAMES, {
+    git: limitedRunner(repo.g, calls), root: repo.dir,
+  });
+  const match = hint.match(/^git commit -m "([^"]+)" "--pathspec-from-file=([^"]+)" --pathspec-file-nul$/);
+  const contents = match && readFileSync(resolve(repo.dir, match[2]), 'utf8');
+  if (hint.length < WINDOWS_ARGV_LIMIT && contents === NAMES.map(p => `${p}\0`).join('')) {
+    pass('a withheld update prints a short command backed by the complete NUL-delimited path list');
+  } else {
+    fail(`withheld recovery hint is invalid or too long (${hint.length} chars)`);
+  }
+  if (match) {
+    limitedRunner(repo.g, calls)('commit', '-m', match[1], `--pathspec-from-file=${match[2]}`, '--pathspec-file-nul');
+    const committed = repo.g('show', '--name-only', '--format=', 'HEAD').split('\n').filter(Boolean);
+    if (committed.length === NAMES.length && !committed.includes('mine.txt')
+        && repo.g('diff', '--cached', '--name-only') === 'mine.txt') {
+      pass('the withheld recovery command commits all 400 update files and leaves unrelated work staged');
+    } else {
+      fail('the withheld recovery command lost update files or swept in unrelated work');
+    }
   }
 }

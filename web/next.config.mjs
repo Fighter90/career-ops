@@ -1,3 +1,8 @@
+// Next sends anonymous usage telemetry unless this is set, and career-ops
+// promises none. server.mjs sets it for dev and start; this covers `next build`,
+// which npm runs directly and which loads this file before it records anything.
+process.env.NEXT_TELEMETRY_DISABLED = "1";
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   // Two lockfiles exist on purpose (repo root + web/), so Next would infer the

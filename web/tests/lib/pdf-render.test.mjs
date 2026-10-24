@@ -109,6 +109,7 @@ test("markTrackerReady: clean exit with JSON stdout -> ok:true, data parsed", as
 
   // Then it reports ok:true with the parsed payload
   assert.equal(result.ok, true);
+  assert.equal(result.code, 0);
   assert.deepEqual(result.data, { changed: true, num: 5, company: "Acme" });
 });
 
@@ -122,6 +123,7 @@ test("markTrackerReady: failure exit with parseable --json error -> data.error a
 
   // Then it reports ok:false with the specific error available for callers to surface
   assert.equal(result.ok, false);
+  assert.equal(result.code, 2);
   assert.equal(result.data?.error, "No tracker row links report #5");
 });
 

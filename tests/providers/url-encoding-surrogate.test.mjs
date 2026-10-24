@@ -97,6 +97,20 @@ try {
     (jobs) => jobs.length === 1 && jobs[0].url.includes('g-1'),
   );
 
+  // dover.parseDoverPage — for…of over results[]; id builds the apply URL (the dedup key).
+  const { parseDoverPage } = await load('dover.mjs');
+  check(
+    'dover.parseDoverPage',
+    () => parseDoverPage(
+      { results: [
+        { id: `${LONE}bad`, title: 'Bad', locations: [] },
+        { id: 'g-1', title: 'Good', locations: [] },
+      ] },
+      { companyName: 'Acme', companySegment: 'Acme' },
+    ).jobs,
+    (jobs) => jobs.length === 1 && jobs[0].url.endsWith('/g-1'),
+  );
+
   // phenom.parseRefineSearch — for…of over refineSearch.data.jobs; jobId is the dedup key.
   const { parseRefineSearch } = await load('phenom.mjs');
   check(
@@ -249,7 +263,7 @@ try {
   // import _safe-url.mjs and call safeEncodeURIComponent; dropping either is the
   // regression this list catches.
   const CONVERTED = [
-    'alibaba.mjs', 'arbeitsagentur.mjs', 'bamboohr.mjs', 'feishu-jobs.mjs', 'garena.mjs', 'jibeapply.mjs',
+    'alibaba.mjs', 'arbeitsagentur.mjs', 'bamboohr.mjs', 'dover.mjs', 'feishu-jobs.mjs', 'garena.mjs', 'jibeapply.mjs',
     'kalibrr.mjs', 'manfred.mjs', 'meituan.mjs', 'mokahr.mjs', 'phenom.mjs', 'platsbanken.mjs',
     'techinasia.mjs', 'thehub.mjs', 'tkms.mjs', 'vdab.mjs', 'zoho-recruit.mjs',
   ];
@@ -260,6 +274,7 @@ try {
   const ALLOWLIST = {
     'csod.mjs': 'corpName comes from portals.yml (careers_url), not from the API response',
     '4dayweek.mjs': 'slug is already validated against SLUG_RE, which rejects a surrogate before this line',
+    'dover.mjs': 'the API URL segment is the board uuid from portals.yml (careers_url), already restricted to UUID_RE',
   };
 
   let files;

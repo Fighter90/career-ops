@@ -39,7 +39,7 @@ test("persisting is guarded by readSavedCliId so an explicit choice is never ove
 test("the detect effect picks with pickDefaultInstalled, not the sole-install helper", () => {
   const detect = src.slice(src.indexOf('fetch("/api/clis")'), src.indexOf("function save()"));
   assert.notEqual(detect.length, 0, "could not locate the CLI-detection effect");
-  assert.match(detect, /pickDefaultInstalled\(\s*list\s*\)/);
+  assert.match(detect, /pickDefaultInstalled\(\s*list\b/);
   assert.doesNotMatch(
     detect,
     /pickSoleInstalled\s*\(/,

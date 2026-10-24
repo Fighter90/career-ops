@@ -14,6 +14,7 @@
 
 import { existsSync, readFileSync, readdirSync } from 'fs';
 import { join } from 'path';
+import { createHash } from 'node:crypto';
 
 /** The original fixed 9-column layout (num … notes at indices 1 … 9). */
 export const LEGACY_COLMAP = {
@@ -357,6 +358,23 @@ export function parseTrackerRow(line, colmap = LEGACY_COLMAP, { allowTabs = fals
   return row;
 }
 
+/**
+ * Hash of every parsed cell of a tracker row except Status.
+ *
+ * A reviewer that shows a row, asks a human, and then hands the write to
+ * set-status.mjs (`--expect-row`) needs to know the row it writes is still the
+ * one that was shown. Status is left out because it has its own guard
+ * (`--expect-status`), and `raw` because it repeats the status cell.
+ *
+ * @param {object} row - parseTrackerRow output (extra keys such as lineIdx are ignored).
+ * @returns {string} Lowercase SHA-256 hex digest.
+ */
+export function trackerRowIdentity(row) {
+  const cells = ['num', 'date', 'company', 'role', 'score', 'pdf', 'report', 'notes', 'url', 'location', 'via']
+    .map(key => [key, row[key] ?? null]);
+  return createHash('sha256').update(JSON.stringify(cells), 'utf8').digest('hex');
+}
+
 // Matches the req/job-number labels actually seen in this tracker's free-text
 // Notes column: `R_1488728`, `Req PRACT011038`, `Req #1311`, `REQ-2026-32061`,
 // `Job 202606-116491`, `Job ID 65136`, `Posting ID 5340`, `JR00124259`,
@@ -436,12 +454,46 @@ function markdownLinkDestination(raw) {
  * Shared by the two tracker cells that carry links — `Report`
  * (`[61](../reports/061-….md)`) and `URL` (`[ashby](https://…)`, #3516) — so
  * the strict destination handling above can never be half-applied to one of
- * them. Exported for merge-tracker.mjs, the only writer of the URL cell.
+ * them. Every script that reads a link out of either cell goes through here
+ * (or through firstLinkTarget / soleMarkdownLink below): a private
+ * `\]\(([^)]+)\)` copy cut a report named `001-acme-(berlin)-….md` short at
+ * the first `)`, so set-status --report-link refused the row and
+ * verify-pipeline called a present report missing (#5482).
  *
  * @param {string} value - A raw tracker cell.
  * @returns {{label: string, target: string}[]}
  */
 export function parseMarkdownLinks(value) {
+  return scanMarkdownLinks(value).map(({ label, target }) => ({ label, target }));
+}
+
+/**
+ * The destination of the first markdown link in a cell, or null when the cell
+ * holds none.
+ *
+ * @param {string} value - A raw tracker cell.
+ * @returns {string|null}
+ */
+export function firstLinkTarget(value) {
+  return scanMarkdownLinks(String(value ?? ''))[0]?.target ?? null;
+}
+
+/**
+ * The cell's one link, when the trimmed cell is exactly one markdown link and
+ * nothing else; null otherwise (no link, two links, or text around it).
+ *
+ * @param {string} value - A raw tracker cell.
+ * @returns {{label: string, target: string}|null}
+ */
+export function soleMarkdownLink(value) {
+  const cell = String(value ?? '').trim();
+  const links = scanMarkdownLinks(cell);
+  if (links.length !== 1 || links[0].start !== 0 || links[0].end !== cell.length) return null;
+  return { label: links[0].label, target: links[0].target };
+}
+
+// parseMarkdownLinks plus each link's span in `value` (`end` exclusive).
+function scanMarkdownLinks(value) {
   const links = [];
   let cursor = 0;
   while (cursor < value.length) {
@@ -479,7 +531,7 @@ export function parseMarkdownLinks(value) {
     }
 
     const target = markdownLinkDestination(value.slice(labelEnd + 2, linkEnd));
-    if (target != null) links.push({ label: value.slice(labelStart + 1, labelEnd), target });
+    if (target != null) links.push({ label: value.slice(labelStart + 1, labelEnd), target, start: labelStart, end: linkEnd + 1 });
     cursor = linkEnd + 1;
   }
   return links;
@@ -602,8 +654,10 @@ export function extractTrackerReportNumbers(reportCell, notesCell = '') {
 }
 
 export function linkedReportNumbers(reportCell, notesCell) {
-  const link = String(reportCell ?? '').match(/\[([^\]]*)\]\(([^)]+)\)/);
-  if (!link) return extractTrackerReportNumbers(reportCell, notesCell);
+  // Link syntax decides the Notes fallback, not a parsed target: `[1](<missing)`
+  // is a present-but-invalid link and must not borrow a number from Notes. The
+  // label rule is parseMarkdownLinks': it ends at the first unescaped `]`.
+  if (!/\[(?:\\[\s\S]|[^\]\\])*\]\(/.test(String(reportCell ?? ''))) return extractTrackerReportNumbers(reportCell, notesCell);
   // Reuse the tracker's canonical local-target validation. It rejects HTTP(S)
   // and protocol-relative links, and returns both numbers on a label/target
   // mismatch. Exactly one number therefore proves a local, self-consistent

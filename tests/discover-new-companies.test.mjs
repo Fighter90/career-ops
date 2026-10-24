@@ -11,10 +11,12 @@
  * - --help exits 0; missing history/value → nonzero exit; bad --since → nonzero exit
  * - default user-layer inputs resolve through CAREER_OPS_ROOT, independent of cwd
  * - --json subtracts already-tracked companies (canonical-name + alias match,
- *   disabled entries count as tracked)
+ *   disabled entries count as tracked, and a row on a board an entry reads)
  * - --min-rows, --added-only, --since window (undated rows pass)
+ * - skipped_title rows are ignored (#2695)
  * - ranking: 'added'-producing companies rank first
  * - default YAML output is the `companies: [{name}]` shape discover-ats consumes
+ * - --json / --summary output larger than a pipe buffer arrives whole
  *
  * Run: node test-all.mjs --only discover-new-companies
  *      A discovered suite reports through the shared counters; running the file
@@ -221,6 +223,35 @@ console.log('\n--- 2. Subtract already-tracked companies ---');
   eq('disabled tracked entry counts as tracked', res.companies.length, 0);
 }
 
+{
+  // The reverse sweep names companies by board slug, which no entry name
+  // matches: the board an entry reads must settle it instead.
+  const history = [
+    row({ company: 'injective-labs', url: 'https://jobs.ashbyhq.com/injective-labs/1' }),
+    row({ company: 'injective-labs', url: 'https://jobs.ashbyhq.com/injective-labs/2' }),
+    row({ company: 'ethereum-foundation', url: 'https://jobs.ashbyhq.com/ethereum-foundation/1' }),
+    row({ company: 'ethereum-foundation', url: 'https://jobs.ashbyhq.com/ethereum-foundation/2' }),
+    // One row off the tracked board, one on it: the tracked row decides.
+    row({ company: 'Foundation Co', url: 'https://jobs.example.org/foundation-co/1' }),
+    row({ company: 'Foundation Co', url: 'https://jobs.ashbyhq.com/foundation/9' }),
+    // The tracked-board row is outside the --since window; it still counts.
+    row({ company: 'Old Board Co', url: 'https://jobs.example.org/old-board-co/1' }),
+    row({ company: 'Old Board Co', url: 'https://jobs.lever.co/oldboard/1', seen: old }),
+    row({ company: 'Fresh Co', url: 'https://jobs.ashbyhq.com/fresh/1' }),
+    row({ company: 'Fresh Co', url: 'https://jobs.ashbyhq.com/fresh/2' }),
+  ];
+  const portals = {
+    tracked_companies: [
+      { name: 'Injective Labs', careers_url: 'https://jobs.ashbyhq.com/injective-labs' },
+      { name: 'Ethereum Foundation (EF)', api: 'https://api.ashbyhq.com/posting-api/job-board/ethereum-foundation', careers_url: 'https://jobs.ashbyhq.com/ethereum-foundation' },
+      { name: 'Injective Protocol', careers_url: 'https://jobs.ashbyhq.com/foundation' },
+      { name: 'Renamed Co', careers_url: 'https://jobs.lever.co/oldboard' },
+    ],
+  };
+  const res = run(history, portals, ['--min-rows', '1', '--json']);
+  eq('companies on a tracked board are excluded, whatever their name', res.companies.map((c) => c.name), ['Fresh Co']);
+}
+
 // ── 3. Filters ────────────────────────────────────────────────────────────────
 console.log('\n--- 3. Filters ---');
 
@@ -246,6 +277,24 @@ console.log('\n--- 3. Filters ---');
   const names = res.companies.map((c) => c.name);
   ok('--added-only keeps companies that produced an added row', names.includes('RealHit'));
   ok('--added-only drops never-added companies', !names.includes('FilteredOnly'));
+}
+
+{
+  // #2695: scan.mjs records every title rejection as skipped_title. An
+  // aggregator board carries many employers, so those rows name untracked
+  // companies whose only postings are off-target; they are not candidates.
+  const history = [
+    row({ company: 'OffTarget', status: 'skipped_title' }),
+    row({ company: 'OffTarget', status: 'skipped_title' }),
+    row({ company: 'Mixed', status: 'skipped_title' }),
+    row({ company: 'Mixed', status: 'skipped_location' }),
+    row({ company: 'Mixed', status: 'skipped_location' }),
+  ];
+  const res = run(history, {}, ['--min-rows', '2', '--json']);
+  const names = res.companies.map((c) => c.name);
+  ok('skipped_title rows do not make a company a candidate', !names.includes('OffTarget'));
+  const mixed = res.companies.find((c) => c.name === 'Mixed');
+  ok('skipped_title rows do not count toward --min-rows', mixed?.rows === 2);
 }
 
 {
@@ -289,6 +338,17 @@ console.log('\n--- 5. Output shape ---');
   const doc = yaml.load(text);
   ok('default YAML is the companies:[{name}] shape discover-ats consumes',
     Array.isArray(doc.companies) && doc.companies[0] && doc.companies[0].name === 'Acme');
+}
+
+{
+  // A pipe takes 64 KiB before the writer must wait for the reader; exiting
+  // straight after console.log dropped the rest of a larger result.
+  const history = Array.from({ length: 600 }, (_, i) => row({ company: `Company ${i}`, title: `Senior Software Engineer, Platform ${i}` }));
+  for (const flag of ['--json', '--summary']) {
+    const text = run(history, {}, ['--min-rows', '1', '--limit', '1000', flag], { parse: 'text' });
+    ok(`${flag} output over 64 KiB reaches a pipe whole (${text.length} bytes)`, text.length > 65536
+      && (flag === '--json' ? JSON.parse(text).companies.length === 600 : text.includes('Company 599') && text.includes('Next: ')));
+  }
 }
 
 // ── 6. Headerless legacy history ──────────────────────────────────────────────

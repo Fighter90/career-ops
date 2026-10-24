@@ -80,7 +80,7 @@ export function ConfigForm() {
           // would stay selected and save() would write it straight back, so
           // "open Config and click Save config" could never clear it (#4012).
           if (keepIfInstalled(prev, list)) return prev;
-          const auto = pickDefaultInstalled(list);
+          const auto = pickDefaultInstalled(list, typeof d.remembered === "string" ? d.remembered : null);
           if (!auto) return "";
           if (!readSavedCliId()) persistCliId(auto);
           return auto;

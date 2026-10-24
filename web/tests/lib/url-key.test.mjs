@@ -111,3 +111,19 @@ test("unparseable / non-http(s) input keys to '' on both sides (NO KEY IS NOT A 
   assert.equal(webKey(null), "");
   assert.equal(webKey(undefined), "");
 });
+
+test("web mirrors core normalization for a single trailing DNS root dot", () => {
+  const cases = [
+    ["https://jobs.example.com./role/123", "https://jobs.example.com/role/123"],
+    ["http://Jobs.Example.COM./role/123?gh_jid=42&utm_source=demo", "https://jobs.example.com/role/123?gh_jid=42"],
+  ];
+  for (const [input, expected] of cases) {
+    assert.equal(webKey(input), expected, `web key for ${input}`);
+    assert.equal(webKey(input), coreKey(input), `core/web parity for ${input}`);
+  }
+
+  // Avoid broad repairs: these spellings stay distinct from a valid host.
+  const doubled = "https://jobs.example.com../role/123";
+  assert.equal(webKey(doubled), coreKey(doubled));
+  assert.notEqual(webKey(doubled), webKey("https://jobs.example.com/role/123"));
+});

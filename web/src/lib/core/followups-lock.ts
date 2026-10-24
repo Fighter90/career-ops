@@ -27,9 +27,7 @@ import { careerOpsRoot } from "@/lib/career-ops";
  *
  * THE LOCK IS NOT REENTRANT (no owner/pid self-check in the core). A caller
  * holding it must never orchestrate a core script that also takes it — that
- * self-deadlocks until the timeout. Our two routes write the file DIRECTLY, so
- * this is safe today; it is a rule for any future followups writer that shells
- * out.
+ * self-deadlocks until the timeout.
  *
  * `finally`-release lives in the core export, so it cannot be forgotten here.
  * The web timeout is deliberately far shorter than the CLI's 60s default: a

@@ -5,6 +5,7 @@ import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } fro
 import { join, delimiter } from 'node:path';
 import { tmpdir } from 'node:os';
 import { ROOT, getBash, rmSync } from './helpers.mjs';
+import { describeSpawn } from './helpers/describe-spawn.mjs';
 
 // update_state_unlocked rewrites every row of batch-state.tsv with
 // `IFS=$'\t' read`, and a tab is IFS whitespace: the two tabs around an empty
@@ -51,7 +52,7 @@ test('a worker that fails without output keeps the retry count of every state ro
   try {
     const result = f.run(['--model', 'test-model']);
     assert.ifError(result.error);
-    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    assert.equal(result.status, 0, describeSpawn(result, `\n`));
 
     const rows = readFileSync(join(f.batch, 'batch-state.tsv'), 'utf8').split('\n').filter(Boolean).slice(1);
     assert.equal(rows.length, 2);

@@ -49,18 +49,19 @@ function linkDestination(raw) {
 }
 
 /**
- * First http(s) markdown-link target in a tracker cell.
+ * Every markdown-link target in a tracker cell, in order.
  * The walk matches tracker-parse.mjs `parseMarkdownLinks`: the label ends at
  * an unescaped `]`, the destination ends at the matching `)`, and a `\` skips
  * the next character.
  * @param {string} value
- * @returns {string|null}
+ * @returns {string[]}
  */
-function firstHttpMarkdownTarget(value) {
+function markdownLinkTargets(value) {
+  const targets = [];
   let cursor = 0;
   while (cursor < value.length) {
     const labelStart = value.indexOf("[", cursor);
-    if (labelStart === -1) return null;
+    if (labelStart === -1) break;
 
     let labelEnd = -1;
     for (let i = labelStart + 1; i < value.length; i++) {
@@ -91,11 +92,34 @@ function firstHttpMarkdownTarget(value) {
     }
 
     const target = linkDestination(value.slice(labelEnd + 2, linkEnd));
-    const href = target == null ? "" : String(target).trim().replace(/^<|>$/g, "");
-    if (/^https?:\/\//i.test(href)) return href;
+    if (target != null) targets.push(target);
     cursor = linkEnd + 1;
   }
-  return null;
+  return targets;
+}
+
+/**
+ * First http(s) markdown-link target in a tracker cell.
+ * @param {string} value
+ * @returns {string|null}
+ */
+function firstHttpMarkdownTarget(value) {
+  // The `<…>` strip mirrors tracker-parse.mjs `extractCellUrl`, so both read
+  // the same href from a URL cell.
+  const hrefs = markdownLinkTargets(value).map((target) => String(target).trim().replace(/^<|>$/g, ""));
+  return hrefs.find((href) => /^https?:\/\//i.test(href)) ?? null;
+}
+
+/**
+ * First markdown-link target in a tracker cell, such as the report path in
+ * `[1](../reports/001-acme-(berlin)-2026-10-01.md)`, or null when the cell
+ * holds no link. Balanced parentheses stay in the target (#5482). Same result
+ * as tracker-parse.mjs `firstLinkTarget`.
+ * @param {string | null | undefined} cell
+ * @returns {string|null}
+ */
+export function firstMarkdownLinkTarget(cell) {
+  return markdownLinkTargets(String(cell ?? ""))[0] ?? null;
 }
 
 /**

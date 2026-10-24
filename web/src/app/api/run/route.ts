@@ -21,6 +21,7 @@ import { capabilitiesFor } from "@/lib/worker-capabilities.mjs";
 import { fencingReport, isCliAllowedForCapabilities } from "@/lib/cli-fencing.mjs";
 import { claudeCliArgs } from "@/lib/claude-invocation.mjs";
 import { resolveCvTemplate } from "@/lib/core/cv-template.mjs";
+import { profileRef } from "@/lib/core/profile-path.mjs";
 import { acquireTrackerWrite, releaseTrackerWrite } from "@/lib/core/run-registry";
 import { createRunFinalizer } from "@/lib/run-finalizer.mjs";
 import { readJsonObject } from "@/lib/json-body";
@@ -151,6 +152,7 @@ export async function POST(req: Request) {
     cvTemplate,
     reportFile: pdfPaths?.reportFile ?? (coverRequest?.ok ? coverRequest.reportFile : undefined),
     coverBrief: coverRequest?.ok ? coverRequest.brief : undefined,
+    profile: profileRef(careerOpsRoot()),
   });
 
   const isClaude = cliId === "claude";

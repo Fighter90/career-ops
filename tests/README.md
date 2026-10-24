@@ -35,10 +35,12 @@ Node.js (`tests/helpers.mjs`).
 
 **Web tests do not live here.** `web/` runs its own `npm test` over
 `web/tests/**/*.test.mjs` (see [../web/README.md](../web/README.md)); this
-directory is for the core. The two suites also differ in style on purpose: web
-suites use `node:test`, while suites here use the `pass`/`fail` helpers because
-this suite must run on a bare clone with no framework — "not even `node:test`"
-(#1440). Don't carry either style across the boundary.
+directory is for the core. Web suites use `node:test`. Suites here may use
+either the `pass`/`fail` helpers or `node:test`, which ships with Node, so both
+run on a bare clone: `test-all.mjs` imports a `pass`/`fail` suite and runs a
+`node:test` suite in a child process under `node --test`, folding its exit code
+into the totals (#2463). `tests/helpers.mjs` is for this directory only; web
+suites do not import it.
 
 The one exception to the split is a guard *about* web's layout —
 `web-test-layout.test.mjs` lives here on purpose, because `web-ci.yml` is

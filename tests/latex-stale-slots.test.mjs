@@ -4,6 +4,7 @@ import { mkdtempSync, writeFileSync, readFileSync, existsSync, rmSync } from 'no
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
+import { describeSpawn, exitedNonZero } from './helpers/describe-spawn.mjs';
 
 const sourceText = String.raw`\documentclass{article}
 \newcommand{\resumeSubheading}[4]{}
@@ -59,7 +60,7 @@ for (const edit of [text => '% New comment before extraction offsets\n' + text, 
     writeFileSync(source, edited);
     writeFileSync(output, 'Previous valid output.');
     const result = cli('patch-latex-content.mjs', [source, manifest, output]);
-    assert.notEqual(result.status, 0);
+    assert.ok(exitedNonZero(result), describeSpawn(result, 'expected a non-zero exit'));
     assert.match(result.stderr, /stale|changed/i);
     assert.match(result.stderr, /extract-latex-content/);
     assert.equal(readFileSync(output, 'utf8'), 'Previous valid output.');
@@ -70,7 +71,7 @@ for (const edit of [text => '% New comment before extraction offsets\n' + text, 
 check('stale spans cannot create a new output artifact', () => fixture(({ source, manifest, output, cli }) => {
   writeFileSync(source, '% Shifted\n' + sourceText);
   const result = cli('patch-latex-content.mjs', [source, manifest, output]);
-  assert.notEqual(result.status, 0);
+  assert.ok(exitedNonZero(result), describeSpawn(result, 'expected a non-zero exit'));
   assert.ok(!existsSync(output));
 }));
 
@@ -100,7 +101,7 @@ for (const existingOutput of [false, true]) {
     writeFileSync(manifest, JSON.stringify(payload));
     if (existingOutput) writeFileSync(output, 'Previous valid output.');
     const result = cli('patch-latex-content.mjs', [source, manifest, output]);
-    assert.notEqual(result.status, 0);
+    assert.ok(exitedNonZero(result), describeSpawn(result, 'expected a non-zero exit'));
     assert.match(result.stderr, /duplicate slot ids/i);
     assert.equal(readFileSync(source, 'utf8'), sourceText);
     if (existingOutput) assert.equal(readFileSync(output, 'utf8'), 'Previous valid output.');

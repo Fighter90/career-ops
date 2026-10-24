@@ -1346,11 +1346,12 @@ function isDisclosedRequirement(clean, match, allMatches) {
  * @param {string} clean
  * @returns {RegExpMatchArray[]}
  */
-function countMatches(clean) {
+function countMatches(clean, { keepPlanHorizons = false } = {}) {
   COUNT_CLAIM_RE.lastIndex = 0;
   const allMatches = [...clean.matchAll(COUNT_CLAIM_RE)];
   return allMatches.filter((match) => {
     if (isDisclosedRequirement(clean, match, allMatches)) return false;
+    if (keepPlanHorizons) return true;
     if (!TIME_NOUNS.has(match[2].toLowerCase())) return true;
     const lead = clean.slice(Math.max(0, match.index - 40), match.index);
     if (!HORIZON_LEAD_RE.test(lead)) return true;
@@ -1739,13 +1740,13 @@ function compactMagnitude(raw) {
 }
 
 /** Extract metric-like claims that require source evidence. */
-export function metricClaims(text) {
+export function metricClaims(text, { keepPlanHorizons = false } = {}) {
   const clean = spellNumbers(stripMarkup(text, { keepLineBreaks: true }));
   const claims = new Set();
   for (const pattern of SIMPLE_CLAIM_PATTERNS) {
     for (const match of clean.matchAll(pattern)) claims.add(canonicalMetric(match[0]));
   }
-  for (const match of countMatches(clean)) {
+  for (const match of countMatches(clean, { keepPlanHorizons })) {
     const noun = match[2].toLowerCase();
     claims.add(normalizeClaim(`${compactMagnitude(match[1])} ${NOUN_SYNONYMS.get(noun) ?? noun}`));
   }
@@ -2030,12 +2031,17 @@ function sourceContainsFact(sourceText, value) {
 
 /**
  * @param {string} targetText generated candidate-facing HTML/Markdown/text
- * @param {{ sourcePaths?: string[], configPath?: string, cwd?: string }} options
+ * @param {{ sourcePaths?: string[], planTexts?: string[], configPath?: string, cwd?: string }} options
+ *   planTexts: what the candidate wrote for one document, such as the answers
+ *   for a cover letter. They support only a number the document states as a
+ *   plan, never an employer, title, tool, or past experience. The rendered
+ *   letter is not passed here, or every claim in it would support itself.
  * @returns {{ verdict: 'pass'|'warn'|'block', invented: string[], unsupportedFacts: object[], advisoryFacts: object[], forbidden: string[], warnings: string[] }}
  * @throws when the config is invalid
  */
 export function verifyFacts(targetText, {
   sourcePaths = DEFAULT_SOURCES,
+  planTexts = [],
   configPath = DEFAULT_CONFIG,
   cwd = process.cwd(),
 } = {}) {
@@ -2046,7 +2052,8 @@ export function verifyFacts(targetText, {
   const { missing: configMissing, config } = loadFactConfig(resolveInputPath(configPath, cwd));
   const allowed = allowedMetricSet(sourceText, config.allow_metrics);
   const targetClaims = metricClaims(targetText);
-  const invented = [...targetClaims].filter(claim => !allowed.has(claim));
+  const planned = plannedClaims(targetText, planTexts);
+  const invented = [...targetClaims].filter(claim => !allowed.has(claim) && !planned.has(claim));
   const sourceNormalized = normalizeFact(stripMarkup(sourceText));
   const allowedFacts = new Set(config.allow_facts.map(normalizeFact));
   const unsourced = ({ value }) => !sourceContainsFact(sourceNormalized, value) && !allowedFacts.has(value);
@@ -2106,6 +2113,107 @@ export function verifyFacts(targetText, {
 }
 
 /**
+ * A past-experience framing of a time metric inside an assertion span, e.g.
+ * "I have 6 months of experience". When a forward marker appears later in the
+ * same clause ("…and will review incidents"), that marker must not pull the
+ * past metric into the plan set.
+ */
+const PAST_TIME_CLAIM_RE = /\b(?:have|has|had|spent|worked)\s+(?:[\p{L}\p{M}-]+\s+){0,4}\d[\d,.]*\s*\+?\s*(?:months|years|weeks|days)\b/giu;
+const PAST_PERCENT_CLAIM_RE = /\b(?:grew|increased|improved|reduced|generated|achieved|delivered|managed|led)\b[^.!?;\n]{0,80}?\d[\d,.]*\s*(?:%|(?:percent|per\s?cent|pct)\b)/giu;
+const DURATION_INTRO_RE = /^\s*(?:over|in|within|for|during|across)\b[^,;:]*?\d[\d,.]*\s*\+?\s*(?:days|weeks|months|years)\s*$/i;
+
+/**
+ * Sentence bounds at `.`, `!`, `?`, or newline — used so a duration intro
+ * ("Over 6 months, …") can inherit a forward marker from the next clause.
+ */
+function sentenceBounds(text, index) {
+  const isSentenceEnd = (i) => {
+    const c = text[i];
+    if (c === '\n') return true;
+    if (c !== '.' && c !== '!' && c !== '?') return false;
+    return !(/\d/.test(text[i - 1] ?? '') && /\d/.test(text[i + 1] ?? ''));
+  };
+  let start = 0;
+  for (let i = index - 1; i >= 0; i--) if (isSentenceEnd(i)) { start = i + 1; break; }
+  let end = text.length;
+  for (let i = index; i < text.length; i++) if (isSentenceEnd(i)) { end = i; break; }
+  return { start, end };
+}
+
+function pastClaimMetrics(span) {
+  const claims = new Set();
+  const add = (text) => {
+    for (const claim of metricClaims(text, { keepPlanHorizons: true })) claims.add(claim);
+  };
+  for (const match of span.matchAll(PAST_TIME_CLAIM_RE)) add(match[0]);
+  for (const match of span.matchAll(PAST_PERCENT_CLAIM_RE)) {
+    const markerAfterVerb = match[0].search(FORWARD_MARKER_RE) > 0;
+    if (markerAfterVerb) continue;
+    add(match[0]);
+  }
+  return claims;
+}
+
+/** A span states a plan when it has a forward marker, or it is a duration introduction in a sentence that has one. */
+function isPlanAssertion(span, sentence) {
+  if (FORWARD_MARKER_RE.test(span)) return true;
+  return DURATION_INTRO_RE.test(span) && FORWARD_MARKER_RE.test(sentence);
+}
+
+/**
+ * Metric claims in `targetText` that `planTexts` support: the plan texts hold
+ * the claim, and the target states that claim as a plan. "I will read the last
+ * 6 months of incident reviews" qualifies. "I have 6 months of
+ * incident-response experience" does not, even when a forward marker appears
+ * later in the same clause. Plan answers keep forward-looking horizon numbers
+ * so a letter can restate them ("Over 6 months, I will…").
+ *
+ * @param {string} targetText
+ * @param {string[]} planTexts
+ * @returns {Set<string>}
+ */
+function plannedClaims(targetText, planTexts) {
+  const planText = planTexts.filter(text => typeof text === 'string').join('\n');
+  if (!planText.trim()) return new Set();
+  // keepPlanHorizons: answers often say "In my first 6 months I will…"; the
+  // target-side horizon rule still drops those from invented claims, but the
+  // plan evidence must retain the number so the letter can restate it.
+  const inPlans = metricClaims(planText, { keepPlanHorizons: true });
+  const clean = spellNumbers(stripMarkup(targetText, { keepLineBreaks: true }));
+  const forward = new Set();
+  const past = new Set();
+  for (let i = 0; i < clean.length;) {
+    const { start, end } = clauseBounds(clean, i);
+    const span = clean.slice(start, end);
+    const { start: s0, end: s1 } = sentenceBounds(clean, i);
+    const sentence = clean.slice(s0, s1);
+    const planAssertion = isPlanAssertion(span, sentence);
+    const pastInSpan = pastClaimMetrics(span);
+    for (const claim of metricClaims(clean.slice(i, end))) {
+      if (pastInSpan.has(claim)) past.add(claim);
+      else if (planAssertion) forward.add(claim);
+      else past.add(claim);
+    }
+    i = end + 1;
+  }
+  return new Set([...forward].filter(claim => inPlans.has(claim) && !past.has(claim)));
+}
+
+/** Say which sources the gate read, so nobody looks for evidence it never checked. */
+export function factSourceAdvice({ letterAnswers = false } = {}) {
+  if (!letterAnswers) {
+    return 'cv.md and article-digest.md do not contain these claims. Add career evidence to one of them. A verified exception belongs in config/cv-facts.json.';
+  }
+  return [
+    'These claims are not in cv.md, article-digest.md, or the answers and inputs supplied for this letter.',
+    'Those answers support only a number the letter states as a plan, never an employer, title, tool, or past experience.',
+    'Add career evidence to cv.md or article-digest.md.',
+    'A plan stays in those answers. Do not copy that plan into cv.md.',
+    'A verified exception belongs in config/cv-facts.json.',
+  ].join(' ');
+}
+
+/**
  * Tell the user why a scope claim blocked and how to allow it once verified.
  *
  * The value is the exact string `allow_facts` matches, so the user can copy it.
@@ -2126,7 +2234,7 @@ export function assertFacts(targetText, options = {}) {
       return sourceLine ? `${kind}=${value} (source says: ${sourceLine})` : `${kind}=${value}`;
     }).join(', ')}`);
     if (result.forbidden.length) details.push(`forbidden phrases found: ${result.forbidden.join(', ')}`);
-    throw new Error(`Fact check failed${options.label ? ` for ${options.label}` : ''}: ${details.join('; ')}`);
+    throw new Error(`Fact check failed${options.label ? ` for ${options.label}` : ''}: ${details.join('; ')}. ${factSourceAdvice({ letterAnswers: Array.isArray(options.planTexts) })}`);
   }
   return result;
 }
@@ -2166,7 +2274,9 @@ function usage() {
 Checks generated candidate-facing text for unsupported metrics and explicitly asserted
 non-metric facts (employers, titles, tools, delegated-work authorship, scope-verb
 inflation, and unsourced adoption claims) absent from source files.
-Default sources: cv.md, article-digest.md
+Default sources: cv.md and article-digest.md.
+A cover letter also reads the answers supplied for that letter, which support
+only a number the letter states as a plan. The rendered letter is not a source.
 Default config:  config/cv-facts.json (optional)`;
 }
 
@@ -2812,7 +2922,7 @@ export function runCli(args = process.argv.slice(2)) {
       console.error('\nForbidden phrases found:');
       for (const phrase of result.forbidden) console.error(`  - ${phrase}`);
     }
-    console.error('\nAdd real evidence to cv.md/article-digest.md, or allow a verified exception in config/cv-facts.json.');
+    console.error(`\n${factSourceAdvice()}`);
     return 1;
   } catch (err) {
     if (parsed.json) {

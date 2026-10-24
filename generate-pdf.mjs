@@ -46,8 +46,8 @@ import { readFile } from 'fs/promises';
 import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'fs';
 import { fileURLToPath, pathToFileURL } from 'url';
 import { randomUUID } from 'node:crypto';
-import { getCareerOpsRoot } from './path-resolver.mjs';
-import { readStyleTokens, injectThemeStyle, readCvSectionOrder } from './theme-style.mjs';
+import { getCareerOpsRoot, getProfilePath, hasProfileOverride } from './path-resolver.mjs';
+import { readStyleTokens, injectThemeStyle, readCvSectionOrder, readLockedSections } from './theme-style.mjs';
 import { validateCvExperienceOrder } from './cv-experience-order.mjs';
 import { resolvePdfIndexPath, resolveTrackerPath, resolveWorkspaceRootFor, writeFileAtomic } from './tracker-utils.mjs';
 import { withPipelineLock } from './pipeline-lock.mjs';
@@ -64,6 +64,17 @@ const trackerPath = resolveTrackerPath(getCareerOpsRoot());
 // spelling the rest of the module compares against stays canonical as before.
 const workspaceRoot = resolveWorkspaceRootFor(getCareerOpsRoot());
 const PDF_PAGE_MARGIN = '0.6in';
+
+/**
+ * The profile a render reads. An explicit root is the workspace the caller
+ * named, so the environment does not redirect it. Otherwise CAREER_OPS_PROFILE
+ * names the file outright, and without it the profile sits in the workspace
+ * (which CAREER_OPS_TRACKER can move off the data root, #2471).
+ */
+function workspaceProfilePath(explicitRoot) {
+  if (explicitRoot) return getProfilePath(explicitRoot);
+  return hasProfileOverride() ? getProfilePath() : getProfilePath(workspaceRoot);
+}
 
 // Canonical tracker workspace: realpath so a symlinked ancestor (e.g. macOS
 // /var -> /private/var) is compared like-for-like by assertInsideWorkspace.
@@ -286,6 +297,16 @@ function normalizeTextForATS(html) {
       bump('markdown-bold', 1);
       return `<strong>${inner}</strong>`;
     });
+    // Markdown italic, as cv.md writes titles (_Game Title_). Both underscores
+    // must sit on a word boundary, and a path separator is not one, so
+    // snake_case, a_b and docs/_draft_/cv.md stay literal. Text-only elements
+    // (<title>, <textarea>, ...) would show <em> as literal text, so skip them.
+    if (!plainUntil) {
+      t = t.replace(/(?<![\p{L}\p{N}_/\\])_(?=[^_\s])([^_\n]*?[^_\s])_(?![\p{L}\p{N}_/\\])/gu, (_, inner) => {
+        bump('markdown-italic', 1);
+        return `<em>${inner}</em>`;
+      });
+    }
     return t;
   }
 
@@ -620,6 +641,79 @@ export function validateCvSectionOrder(html, cvMarkdown, { allowReorder = false 
     return;
   }
   throw new Error(message);
+}
+
+function normalizeForComparison(text) {
+  if (!text) return '';
+  return text
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&#?[a-z0-9]+;/gi, ' ')
+    .replace(/[#*`_~|•·]/g, ' ') // Strip markdown and bullet chars
+    .replace(/[^\p{L}\p{M}\p{N}\s]/gu, ' ') // Strip punctuation to be safe against ATS transformations
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+/**
+ * Validate that sections marked as locked in config/profile.yml are identical
+ * (ignoring formatting) between the source cv.md and the rendered HTML.
+ * @param {string} html 
+ * @param {string} cvMarkdown 
+ * @param {string[]} lockedKeys 
+ */
+export function validateLockedSections(html, cvMarkdown, lockedKeys) {
+  if (!lockedKeys || lockedKeys.length === 0) return;
+
+  const htmlSections = html.matchAll(/<[^>]+class=["'][^"']*\bsection-title\b[^"']*["'][^>]*>([\s\S]*?)<\/[^>]+>/gi);
+  const renderedMap = new Map();
+  let lastKey = null;
+  let lastIndex = 0;
+  for (const match of htmlSections) {
+    if (lastKey) {
+      renderedMap.set(lastKey, html.substring(lastIndex, match.index));
+    }
+    lastKey = sectionKey(match[1]);
+    lastIndex = match.index + match[0].length;
+  }
+  if (lastKey) {
+    renderedMap.set(lastKey, html.substring(lastIndex));
+  }
+
+  // Each heading's section runs to the next heading of the same or a higher
+  // level, measured from that heading itself: a cv.md that opens with a
+  // `# Name` title must not swallow the `##` sections below it. When two
+  // headings fold to the same key, the shallower (then the first) one wins.
+  const sourceLines = cvMarkdown.split(/\r?\n/);
+  const headings = [];
+  sourceLines.forEach((line, index) => {
+    const heading = line.match(/^\s{0,3}(#{1,6})\s+(.+?)\s*#*\s*$/);
+    if (heading) headings.push({ index, level: heading[1].length, key: sectionKey(heading[2]) });
+  });
+  const sourceMap = new Map();
+  const sourceLevels = new Map();
+  headings.forEach((heading, i) => {
+    if (sourceLevels.has(heading.key) && sourceLevels.get(heading.key) <= heading.level) return;
+    const next = headings.slice(i + 1).find(other => other.level <= heading.level);
+    const end = next ? next.index : sourceLines.length;
+    const body = sourceLines.slice(heading.index + 1, end);
+    sourceMap.set(heading.key, body.length ? body.join('\n') + '\n' : '');
+    sourceLevels.set(heading.key, heading.level);
+  });
+
+  for (const key of lockedKeys) {
+    if (!sourceMap.has(key)) {
+      const availableKeys = Array.from(sourceMap.keys()).map(k => `'${k}'`).join(', ');
+      throw new Error(`Configured locked_section '${key}' not found in cv.md. Available sections: ${availableKeys}`);
+    }
+    const sourceNorm = normalizeForComparison(sourceMap.get(key));
+    const renderedRaw = renderedMap.get(key) || '';
+    const renderedNorm = normalizeForComparison(renderedRaw);
+
+    if (sourceNorm !== renderedNorm) {
+      throw new Error(`Locked section '${key}' was modified during tailoring.\nExpected (normalized): ${sourceNorm}\nFound (normalized): ${renderedNorm}`);
+    }
+  }
 }
 
 /**
@@ -1267,7 +1361,7 @@ export function injectPrintPageCss(html, format, country) {
   // lib/page-format.mjs so a caller that passes nothing gets the user's
   // configured size instead of a fallback private to this file.
   const pageSize = PAGE_CSS_SIZE[resolvePageFormat(format, {
-    profilePath: resolve(workspaceRoot, 'config', 'profile.yml'),
+    profilePath: workspaceProfilePath(),
     country,
   })];
   // Read --page-margin (set by the template's own :root default, and overridden
@@ -1594,7 +1688,7 @@ async function generatePDF() {
   // The pre-resolution flag travels to the batch so an entry's own country can
   // still steer `auto`; the resolved size below would already have settled it.
   const flagFormat = format;
-  format = resolvePageFormat(format, { profilePath: resolve(workspaceRoot, 'config', 'profile.yml'), country });
+  format = resolvePageFormat(format, { profilePath: workspaceProfilePath(), country });
 
   // Batch mode (#2384): render every document in the manifest through one
   // Chromium. Applies the global --max-pages/--strict-pages/--allow-reorder/
@@ -1692,10 +1786,11 @@ async function generatePDF() {
   // __dirname anchor made CAREER_OPS_TRACKER split one logical profile across
   // two files — style from the workspace, section order from the checkout —
   // and validated the workspace's CV against the checkout's declared order.
-  html = reorderCvSections(html, readCvSectionOrder(resolve(workspaceRoot, 'config', 'profile.yml')));
+  html = reorderCvSections(html, readCvSectionOrder(workspaceProfilePath()));
 
   validateCvSectionOrder(html, cvMarkdown, { allowReorder });
   validateCvExperienceOrder(html, { allowNonChronological });
+  validateLockedSections(html, cvMarkdown, readLockedSections(workspaceProfilePath(), sectionKey));
 
   // Normalize text for ATS compatibility (issue #1)
   const normalized = normalizeTextForATS(html);
@@ -1717,7 +1812,7 @@ async function generatePDF() {
     inputPath,
     maxPages,
     strictPages,
-    styleTokens: readStyleTokens(resolve(workspaceRoot, 'config', 'profile.yml')),
+    styleTokens: readStyleTokens(workspaceProfilePath()),
   });
 }
 
@@ -1790,9 +1885,10 @@ async function runBatchFromManifest(manifestPath, globals) {
   }
   // Read one workspace profile for the batch. The working directory must not
   // choose a different theme from the single-document render.
-  const profilePath = resolve(workspaceRoot, 'config', 'profile.yml');
+  const profilePath = workspaceProfilePath();
   const cvSectionOrder = readCvSectionOrder(profilePath);
   const styleTokens = readStyleTokens(profilePath);
+  const lockedKeys = readLockedSections(profilePath, sectionKey);
 
   for (let i = 0; i < manifest.length; i++) {
     const spec = manifest[i];
@@ -1856,6 +1952,7 @@ async function runBatchFromManifest(manifestPath, globals) {
       html = reorderCvSections(html, cvSectionOrder);
       validateCvSectionOrder(html, cvMarkdown, { allowReorder: globals.allowReorder });
       validateCvExperienceOrder(html, { allowNonChronological: globals.allowNonChronological });
+      validateLockedSections(html, cvMarkdown, lockedKeys);
       html = normalizeTextForATS(html).html;
       // Same gate, same guard and same place as the single render. A blocked
       // entry throws into the catch below: it is recorded as failed and never
@@ -2049,7 +2146,7 @@ export async function renderHtmlToPdf(html, outputPath, opts = {}) {
  */
 async function renderInPage(browser, html, outputPath, opts = {}) {
   const outputRoot = opts.workspaceRoot || workspaceRoot;
-  const format = resolvePageFormat(opts.format, { profilePath: resolve(outputRoot, 'config', 'profile.yml'), country: opts.country });
+  const format = resolvePageFormat(opts.format, { profilePath: workspaceProfilePath(opts.workspaceRoot), country: opts.country });
   const requestedBaseDir = resolve(opts.baseDir || outputRoot);
   // Temporary HTML is an output too: never let an external input path or
   // caller-supplied baseDir choose an arbitrary directory. If the requested
@@ -2087,7 +2184,7 @@ async function renderInPage(browser, html, outputPath, opts = {}) {
   // properties so the templates' var(--x, <default>) reads pick them up (#1837).
   // No `style:` block → no tokens → byte-identical output. Both the CV path and
   // the cover-letter path flow through here, so both are themed from one place.
-  const styleTokens = opts.styleTokens ?? readStyleTokens(resolve(outputRoot, 'config', 'profile.yml'));
+  const styleTokens = opts.styleTokens ?? readStyleTokens(workspaceProfilePath(opts.workspaceRoot));
   html = injectThemeStyle(html, styleTokens);
 
   html = injectPrintPageCss(html, format, opts.country);

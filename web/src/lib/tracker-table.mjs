@@ -119,6 +119,16 @@ function trackerCells(line) {
  * @returns {Record<string, number> | null}
  */
 export function detectColumnMap(lines, aliases) {
+  return detectHeader(lines, aliases)?.map ?? null;
+}
+
+/**
+ * detectColumnMap plus the header row's own cell count.
+ * @param {string[]} lines
+ * @param {Record<string, string>} aliases
+ * @returns {{ map: Record<string, number>, width: number } | null}
+ */
+function detectHeader(lines, aliases) {
   for (const raw of lines) {
     const line = raw.trim();
     if (!line.startsWith("|")) continue;
@@ -129,7 +139,7 @@ export function detectColumnMap(lines, aliases) {
       const k = WEB_FIELD[aliases[c.toLowerCase()]];
       if (k) m[k] = i; // unconditional: last occurrence wins, same as detectColumns
     });
-    if (["n", "company", "role", "score", "status"].every((k) => m[k] != null)) return m;
+    if (["n", "company", "role", "score", "status"].every((k) => m[k] != null)) return { map: m, width: cells.length };
   }
   return null;
 }
@@ -180,14 +190,21 @@ function urlCell(field, raw) {
 
 export function parseApplications(md, rootDir, systemRootDir) {
   const lines = md.split("\n");
-  const map = detectColumnMap(lines, loadHeaderAliases(rootDir, systemRootDir));
+  const header = detectHeader(lines, loadHeaderAliases(rootDir, systemRootDir));
+  const map = header?.map ?? null;
   const mappedWidth = map ? Math.max(...Object.values(map)) + 1 : 0;
+  // The eight-cell floor for rows, lowered only for a header that is itself
+  // narrower (no PDF/Report column, which parseTrackerRow reads). For a header
+  // of eight or more cells it stays, so a seven-cell row that lost an interior
+  // cell under a header with unrecognized trailing columns is still dropped
+  // rather than read one column shifted.
+  const minCells = Math.min(8, header?.width ?? 8);
   const rows = [];
   for (const raw of lines) {
     const line = raw.trim();
     if (!line.startsWith("|")) continue;
     const cells = trackerCells(line);
-    if (cells.length < 8) continue;
+    if (cells.length < minCells) continue;
     if (map) {
       // Width guard, mirroring parseTrackerRow: a row missing an INTERIOR cell
       // shifts every later column one left, so requiring merely that the

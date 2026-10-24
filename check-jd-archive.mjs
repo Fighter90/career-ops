@@ -83,6 +83,7 @@ import { getCareerOpsRoot } from './path-resolver.mjs';
 import { resolveColumns, parseTrackerRow, extractTrackerReportNumbers } from './tracker-parse.mjs';
 import { loadCanonicalStates, resolveCanonicalState, resolveTrackerPath } from './tracker-utils.mjs';
 import { isMainModule } from './lib/is-main-module.mjs';
+import { JD_HEADING_RE, NEXT_REPORT_SECTION_RE } from './lib/jd-archive-section.mjs';
 
 const CAREER_OPS = dirname(fileURLToPath(import.meta.url));
 const DATA_ROOT = getCareerOpsRoot();
@@ -139,20 +140,13 @@ export function parseReportFilename(filename) {
 }
 
 // --- Archive-section detection ---
-// Matches "## Job Description", with or without a parenthetical/suffix (the
-// canonical heading is "## Job Description (archived verbatim)"). Content is
-// read up to the next KNOWN report-section heading or end of file — not any
-// "## " line, because a JD pasted verbatim can itself contain markdown-style
-// sub-headings (e.g. "## Responsibilities"), which would otherwise truncate
-// the section and falsely report a real archive as missing (CodeRabbit,
-// PR #2791). The allowlist below is every section name modes/oferta.md's
-// report template actually uses; a real JD's own text is vanishingly
-// unlikely to collide with one verbatim. HTML comments are stripped before
-// the length check so a commented-out template stub doesn't count as
-// archived text.
-const JD_HEADING_RE = /^##\s+Job Description\b.*$/im;
-const NEXT_REPORT_SECTION_RE =
-  /^##\s+(?:Machine Summary|Keywords extracted|[A-Z]\)|Block\s[A-Z]\b|Risk Summary|Cover Letter Draft|Post-evaluation|Liveness gate|Blacklist gate|Bounded Research Budget|Step 0\b)/im;
+// JD_HEADING_RE and NEXT_REPORT_SECTION_RE are shared with the evaluators that
+// write the section (lib/jd-archive-section.mjs), so writer and reader agree on
+// where it starts and ends. Content runs to the next KNOWN report-section
+// heading or end of file, not to any "## " line, because a verbatim JD can
+// carry its own sub-headings (CodeRabbit, PR #2791). HTML comments are
+// stripped before the length check so a commented-out template stub doesn't
+// count as archived text.
 
 // The unfilled modes/oferta.md template placeholder ("(the posting's full
 // text, pasted verbatim — see requirement below)") is 66 characters — longer

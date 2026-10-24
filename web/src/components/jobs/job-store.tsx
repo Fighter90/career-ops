@@ -1,10 +1,11 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { scoreTone } from "@/lib/format";
 import { resolveCliId } from "@/lib/saved-cli";
 import { createWorkerFeedback } from "@/lib/worker-feedback.mjs";
 import { readJobStream } from "@/lib/job-stream.mjs";
+import { createJobsPersister } from "@/lib/jobs-persist.mjs";
 
 export type JobStep = { kind: "tool" | "status"; label: string; ts: number };
 export type JobResult = { score: number | null; summary: string; tone: "good" | "warn" | "bad" | "muted" };
@@ -86,14 +87,34 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
     loaded.current = true;
   }, []);
 
-  // persist
+  // persist. Every streamed chunk replaces `jobs`, so writes go through the
+  // persister: at once when nothing runs, at most once a second while a job
+  // streams, and flushed when the page is hidden or the provider unmounts.
+  const persister = useRef<ReturnType<typeof createJobsPersister<Job>> | null>(null);
+  if (persister.current === null) {
+    persister.current = createJobsPersister<Job>({
+      write: (list) => {
+        try {
+          localStorage.setItem(JOBS_KEY, JSON.stringify(list.slice(0, 40)));
+        } catch {
+          /* quota */
+        }
+      },
+      isActive: (list) => list.some((j) => j.status === "running"),
+    });
+  }
+  useEffect(() => {
+    const owner = persister.current;
+    const flush = () => owner?.flush();
+    window.addEventListener("pagehide", flush);
+    return () => {
+      window.removeEventListener("pagehide", flush);
+      flush();
+    };
+  }, []);
   useEffect(() => {
     if (!loaded.current) return;
-    try {
-      localStorage.setItem(JOBS_KEY, JSON.stringify(jobs.slice(0, 40)));
-    } catch {
-      /* quota */
-    }
+    persister.current?.save(jobs);
   }, [jobs]);
 
   const patch = useCallback((id: string, fn: (j: Job) => Job) => {
@@ -229,8 +250,12 @@ export function JobsProvider({ children }: { children: React.ReactNode }) {
   const removeJob = useCallback((id: string) => setJobs((js) => js.filter((j) => j.id !== id)), []);
   const clearFinished = useCallback(() => setJobs((js) => js.filter((j) => j.status === "running")), []);
 
+  // A new object only when the list or an action changes, not on every render
+  // of this provider (the screen-reader announcement re-renders it too).
+  const value = useMemo(() => ({ jobs, startJob, removeJob, clearFinished }), [jobs, startJob, removeJob, clearFinished]);
+
   return (
-    <JobsContext.Provider value={{ jobs, startJob, removeJob, clearFinished }}>
+    <JobsContext.Provider value={value}>
       {children}
       <div role="status" aria-label="Worker task status" aria-live="polite" aria-atomic="true" className="sr-only">{announcement}</div>
     </JobsContext.Provider>

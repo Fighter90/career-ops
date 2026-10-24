@@ -13,10 +13,11 @@
 import { appendFileSync, existsSync, readFileSync } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import * as yaml from 'js-yaml';
+import { loadYaml } from './lib/yaml-document.mjs';
 import { buildLocationFilter, normalizeUrlForDedup, PORTALS_PATH, SCAN_HISTORY_PATH, PIPELINE_PATH } from './scan.mjs';
 import { buildTitleFilter } from './title-keywords.mjs';
 import { loadProviders, resolveProvider } from './providers/_registry.mjs';
+import { mergeProviderPlugins } from './plugins/_engine.mjs';
 import { normalizeCompany } from './tracker-utils.mjs';
 import { getCareerOpsRoot } from './path-resolver.mjs';
 import { localToday } from './lib/local-today.mjs';
@@ -154,8 +155,9 @@ export function diagnose(posting, ctx) {
     }
     if (entry.enabled === false) return { gap: 'tracked-disabled', evidence, fix: `re-enable "${entry.name}" if its board is live` };
     const resolved = resolveProvider(entry, ctx.providers);
+    const inactiveReason = resolved && !resolved.error ? resolved.provider.inactiveReason : undefined;
     if (resolved && !resolved.error) {
-      evidence.push(`provider: ${resolved.provider.id}`);
+      evidence.push(`provider: ${resolved.provider.id}${inactiveReason ? ` (plugin inactive: ${inactiveReason})` : ''}`);
     } else {
       // Scanners with their own company lists (scan-hn.mjs, scan-interamt.mjs, ...)
       // show up only in scan-history, under their own portal names.
@@ -174,6 +176,11 @@ export function diagnose(posting, ctx) {
     }
     if (!titleOk(title)) return { gap: 'tracked-title-filter', evidence, fix: `title keyword: no title_filter keyword matches "${title}"` };
     if (locationOk === false) return { gap: 'tracked-location-filter', evidence, fix: `location: location_filter drops "${location}"` };
+    // An enabled provider plugin that cannot run (missing key, failed
+    // integrity check) resolves to a stub: the scanner never reads this board.
+    if (inactiveReason) {
+      return { gap: 'tracked-not-seen', evidence, fix: `activate the "${resolved.provider.id}" plugin: ${inactiveReason} (node doctor.mjs shows its setup)` };
+    }
     if (otherBoard) {
       return { gap: 'tracked-not-seen', evidence, fix: `the entry reads another board: point "${entry.name}".careers_url at ${careersUrlFor(target)}, or add that board as a second entry` };
     }
@@ -215,7 +222,7 @@ export function diagnose(posting, ctx) {
 }
 
 export function loadContext() {
-  const config = yaml.load(readFileSync(PORTALS_PATH, 'utf8')) || {};
+  const config = loadYaml(readFileSync(PORTALS_PATH, 'utf8')) || {};
   const entries = [...(config.tracked_companies || []), ...(config.job_boards || [])].filter(e => e && typeof e === 'object');
   const history = new Map();
   const historyCompanies = new Map();
@@ -259,7 +266,9 @@ export function appendMiss(file, posting, result, note, date) {
   });
   if (logged) return false;
   const row = [date, posting.url, posting.company, posting.title, result.gap, result.fix, note].map(clean).join('\t');
-  appendFileSync(file, (existing ? '' : MISSES_HEADER + '\n') + row + '\n');
+  // An unterminated last row (a hand edit) is closed first, or the new row fuses onto it.
+  const lead = existing ? (existing.endsWith('\n') ? '' : '\n') : MISSES_HEADER + '\n';
+  appendFileSync(file, lead + row + '\n');
   return true;
 }
 
@@ -277,7 +286,12 @@ async function main() {
     console.error(`Error: portals.yml not found at ${PORTALS_PATH}. Run onboarding first - the check reads its title_filter and tracked_companies.`);
     process.exit(1);
   }
-  const ctx = { ...loadContext(), providers: await loadProviders(path.join(CODE_ROOT, 'providers')) };
+  const providers = await loadProviders(path.join(CODE_ROOT, 'providers'));
+  // Same provider map scan.mjs builds (#4026): without the enabled provider
+  // plugins, an entry the scanner reads through one is diagnosed as
+  // tracked-no-provider. No-op when config/plugins.yml is absent.
+  await mergeProviderPlugins(providers, { root: CODE_ROOT, dataRoot: DATA_ROOT });
+  const ctx = { ...loadContext(), providers };
   const result = diagnose(posting, ctx);
   const log = args.includes('--log');
   const logged = log && result.gap !== 'surfaced'

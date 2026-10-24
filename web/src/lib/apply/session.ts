@@ -1,4 +1,6 @@
+import { pathToFileURL } from "node:url";
 import { chromium, type Browser, type BrowserContext, type Page, type Frame, type Response } from "playwright-core";
+import { resolveCodeRoot, resolveRootScript } from "@/lib/core/code-root.mjs";
 import { extractForm, type ApplyField, type ExtractedForm } from "./extract";
 import { parseGreenhouse, fetchGreenhouseSchema } from "./greenhouse";
 import { statusBlock, dismissConsent, tryApplyTrigger, dropNewTabs, classifyEmpty, captchaWarning, multiStepInfo, verifyFill, type ApplyIssue } from "./diagnose";
@@ -9,6 +11,13 @@ import { resolveCli } from "../clis";
 import { fencingReport } from "../cli-fencing.mjs";
 import { CAPS } from "../worker-capabilities.mjs";
 import { assertSafeApplyUrl, installApplyEgressGuard, isUnsafeApplyUrlError, isBlockedNavigation, UnsafeApplyUrlError } from "./url-guard.mjs";
+
+type ApplyLaunch = { headless?: boolean; channel?: string; args?: string[] };
+
+async function applyLaunch(): Promise<{ HEADED_APPLY_LAUNCH: ApplyLaunch; BUNDLED_HEADED_LAUNCH: ApplyLaunch }> {
+  const file = resolveRootScript(resolveCodeRoot(process.cwd(), process.env), "apply-scope");
+  return import(/* webpackIgnore: true */ pathToFileURL(file).href) as Promise<{ HEADED_APPLY_LAUNCH: ApplyLaunch; BUNDLED_HEADED_LAUNCH: ApplyLaunch }>;
+}
 
 /** The frame with the most interactive controls — where the agentic interpreter
  *  should look when deterministic extraction found nothing usable. */
@@ -117,10 +126,6 @@ async function enrichFromAts(url: string, fields: ApplyField[]): Promise<void> {
   }
 }
 
-// A persistent apply SESSION keeps one real-form page open (headed-but-off-screen)
-// so we can: extract → (user verifies pre-filled answers) → FILL the real form →
-// bringToFront() for the human to submit it themselves. Headed (channel:chrome) =
-// the user's own Chrome on their residential IP (best ATS success); never submits.
 type Session = { id: string; url: string; title: string; fields: ApplyField[]; context: BrowserContext; page: Page; frame: Frame; createdAt: number; formShot?: string };
 
 declare global {
@@ -136,18 +141,15 @@ const SESSIONS: Map<string, Session> = (globalThis.__coApplySessions ??= new Map
 async function headedBrowser(): Promise<Browser> {
   const b = globalThis.__coHeadedBrowser;
   if (b && b.isConnected()) return b;
+  const { HEADED_APPLY_LAUNCH, BUNDLED_HEADED_LAUNCH } = await applyLaunch();
   let nb: Browser;
   try {
-    nb = await chromium.launch({
-      channel: "chrome",
-      headless: false,
-      args: ["--window-position=-3200,-3200", "--window-size=1280,940"], // off-screen during fill; moved on-screen at handoff
-    });
+    nb = await chromium.launch(HEADED_APPLY_LAUNCH);
   } catch {
     // No system Google Chrome → fall back to Playwright's bundled Chromium if
     // present; otherwise a clear, actionable error.
     try {
-      nb = await chromium.launch({ headless: false, args: ["--window-position=-3200,-3200", "--window-size=1280,940"] });
+      nb = await chromium.launch(BUNDLED_HEADED_LAUNCH);
     } catch {
       throw new Error("The apply feature needs Google Chrome. Install Chrome (or run: npx playwright install chromium) and try again.");
     }
@@ -460,13 +462,10 @@ export async function fillSession(
         await s.frame.locator(`[data-co-field="${cssAttr(meta.id)}"]`).first().setInputFiles(cvPath);
         ok = true;
       } catch {
-        // fallback: any file input inside the same field container
-        try {
-          await s.frame.locator(`input[type=file]`).first().setInputFiles(cvPath);
-          ok = true;
-        } catch {
-          ok = false;
-        }
+        // A replaced/missing resume control does not identify another upload.
+        // The first file input may be a cover letter or portfolio: leave it for
+        // the user rather than attach the CV to an unrelated field.
+        ok = false;
       }
       steps.push({ fieldId: meta.id, label: `${meta.label || "Resume"} (CV attached)`, ok, thumb: await shoot() });
     }
@@ -494,8 +493,10 @@ export async function fillSession(
         await loc.scrollIntoViewIfNeeded().catch(() => {});
         await loc.click();
         await s.page.waitForTimeout(150);
-        await loc.pressSequentially(value, { delay: 15 }).catch(async () => {
-          await s.page.keyboard.type(value);
+        // No line breaks reach the keyboard: an Enter in a form can submit it.
+        const typed = String(value).replace(/[\r\n]+/g, " ");
+        await loc.pressSequentially(typed, { delay: 15 }).catch(async () => {
+          await s.page.keyboard.insertText(typed);
         });
         await s.page.waitForTimeout(300);
         const menu = '.select__menu .select__option, .select__menu-list [role="option"], [class*="menu" i] [role="option"]';
