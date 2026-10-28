@@ -22,6 +22,7 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname } from 'node:path';
 import { structuredFieldClaims, verifyFacts } from '../verify-cv-facts.mjs';
+import { describeSpawn } from './helpers/describe-spawn.mjs';
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const tmp = mkdtempSync(join(tmpdir(), 'career-ops-structured-facts-'));
@@ -52,7 +53,7 @@ function build(script, payload, ext) {
   const output = `${input}.${ext}`;
   writeFileSync(input, JSON.stringify(payload));
   const run = spawnSync(process.execPath, [join(ROOT, script), input, output], { encoding: 'utf-8' });
-  assert.equal(run.status, 0, `${script} failed: ${run.stderr}${run.stdout}`);
+  assert.equal(run.status, 0, describeSpawn(run, `${script} failed`));
   return readFileSync(output, 'utf-8');
 }
 

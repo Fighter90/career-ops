@@ -75,9 +75,9 @@ export function JobCard({
             {letter}
           </div>
           <div className="min-w-0 flex-1">
-            <h3 className={`${instrumentSerif.className} truncate text-[17px] leading-tight text-foreground transition-colors group-hover:text-brand`}>
+            <h2 className={`${instrumentSerif.className} truncate text-[17px] leading-tight text-foreground transition-colors group-hover:text-brand`}>
               {job.name}
-            </h3>
+            </h2>
             <p className="mt-0.5 flex items-center gap-1.5 text-[13px] text-muted">
               <Clock className="size-3.5 text-faint" />
               Every {job.every} {job.unit} · {job.timezone}

@@ -15,6 +15,13 @@ nothing leaves your machine until you press Submit yourself).
 
 <!-- ENTRIES -->
 
+<!-- hire n=20 level=handle handle=bluezeb12 role="Database Systems Engineer" sector="Contracting Firm" geo="remote US" weeks=9 link="https://github.com/career-ops-hq/career-ops/issues/5921" -->
+### Hire #20
+
+> Applied through career-ops targeting health tech and federal systems. The initial application opened up a referral for a remote contracting role as a Database Systems Engineer supp
+
+<a href="https://github.com/bluezeb12"><img src="https://github.com/bluezeb12.png?size=64" width="28" height="28" align="top" alt="@bluezeb12"> **@bluezeb12**</a> · Database Systems Engineer · remote US · 9 weeks · [story →](https://github.com/career-ops-hq/career-ops/issues/5921)
+
 <!-- hire n=19 level=role role="Project Manager" sector="Mid Size Tech - Health" geo="Hibrid - Brazil" link="https://github.com/career-ops-hq/career-ops/issues/5786" -->
 ### Hire #19
 

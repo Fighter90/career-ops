@@ -13,7 +13,7 @@ import { fileURLToPath } from 'url';
 import { findTitleFilterConflicts } from './lib/title-filter-conflicts.mjs';
 import { sectionState, scanHeadings, SECTIONS } from './lib/personalization.mjs';
 import { discoverPlugins, pluginRoots, pluginStatus } from './plugins/_engine.mjs';
-import { getCareerOpsRoot, getProfilePath, hasProfileOverride } from './path-resolver.mjs';
+import { getCareerOpsRoot, getProfilePath, hasProfileOverride, isPluginInstallCopy } from './path-resolver.mjs';
 import { parseConfigByExtension } from './jsonc-parse.mjs';
 import { validateFlags, flagValue } from './lib/cli-flags.mjs';
 import { geminiNodeFloor } from './lib/gemini-node-floor.mjs';
@@ -25,6 +25,30 @@ import { findExperienceSections, parseCompanyHeading, EXPERIENCE_HEADING_NAMES }
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const argv = process.argv.slice(2);
 
+// path-resolver.mjs refuses an explicit data root inside a plugin install copy,
+// and some modules loaded below resolve the root as they load. Ask once, first,
+// so the refusal reaches the user as a report instead of a stack trace.
+try {
+  getCareerOpsRoot();
+} catch (err) {
+  if (err?.code !== 'CAREER_OPS_UNSAFE_DATA_ROOT') throw err;
+  if (argv.includes('--json')) {
+    // Same keys as a normal --json run, so an agent reading `warnings` sees it;
+    // onboardingNeeded stays true so nothing proceeds on this root.
+    console.log(JSON.stringify({
+      onboardingNeeded: true,
+      missing: [],
+      unpersonalized: [],
+      warnings: [err.message],
+      autoCopied: [],
+      dataRootError: { code: err.code, source: err.source, root: err.root },
+    }));
+  } else {
+    console.log(`\ncareer-ops doctor\n================\n\n✗ ${err.message}\n`);
+  }
+  process.exit(1);
+}
+
 // Modules that import an npm package (directly or through their own imports)
 // load here, after the fact, instead of as static imports. A static import of
 // a missing package fails while Node links the module graph, before a single
@@ -32,7 +56,7 @@ const argv = process.argv.slice(2);
 // copy made without `npm install`) died with a raw ERR_MODULE_NOT_FOUND stack
 // from the very check that exists to report missing dependencies. Loading them
 // dynamically lets that failure be caught and reported with the fix.
-let hasYamlContent, loadYaml, dotenv, AGENT_CLIS, validateProfile, EXAMPLE_PATH, resolveExtractorMode;
+let hasYamlContent, loadYaml, dotenv, AGENT_CLIS, validateProfile, EXAMPLE_PATH, resolveExtractorMode, auditUserTemplates;
 try {
   [
     { hasYamlContent, loadYaml },
@@ -40,12 +64,14 @@ try {
     { AGENT_CLIS },
     { validateProfile, EXAMPLE_PATH },
     { resolveExtractorMode },
+    { auditUserTemplates },
   ] = await Promise.all([
     import('./lib/yaml-document.mjs'),
     import('dotenv'),
     import('./lib/agent-cli.mjs'),
     import('./validate-profile.mjs'),
     import('./browser-extract.mjs'),
+    import('./cv-templates.mjs'),
   ]);
 } catch (err) {
   let missing = [];
@@ -227,8 +253,25 @@ function checkDependencies() {
   return {
     pass: false,
     label: `Dependencies missing: ${missing.join(', ')}`,
-    fix: 'Run: npm install',
+    fix: isPluginInstallCopy(codeRoot)
+      ? 'Start a new Claude Code session: the plugin\'s SessionStart hook installs them and reports any npm error'
+      : 'Run: npm install',
   };
+}
+
+// A Claude Code plugin install runs from a copy under ~/.claude/plugins/ that
+// Claude Code replaces on every plugin update, so the data root must live
+// outside it. Null for a checkout, which is not a copy.
+function checkPluginInstall(root) {
+  if (explicitTarget || !isPluginInstallCopy(codeRoot)) return null;
+  if (isPluginInstallCopy(root)) {
+    return {
+      pass: false,
+      label: `Data root ${root} is inside the Claude Code plugin install, which is replaced on every plugin update`,
+      fix: 'Set CAREER_OPS_ROOT to an absolute path outside ~/.claude/plugins, or unset it to use ~/career-ops-data',
+    };
+  }
+  return { pass: true, label: `Claude Code plugin install: your files live in ${root}` };
 }
 
 // The web UI is optional, so missing web/ dependencies are a warning: only
@@ -841,7 +884,7 @@ const USER_LAYER_PREREQS = [
   },
 ];
 
-const CLI_NAMES = 'claude, codex, gemini, opencode, qwen, agy or grok';
+const CLI_NAMES = 'claude, codex, opencode, qwen, agy or grok';
 
 // The lane variables (CAREER_OPS_PORTALS, CAREER_OPS_PIPELINE) move one file
 // out of the data root, and the scanner reads them (path-resolver.mjs), so
@@ -1133,6 +1176,36 @@ function checkCvShape(root) {
   };
 }
 
+// The user's own templates under data/templates/ (#5777). Advisory: a template
+// that stopped resolving, or lost a slot every shipped variant keeps, is named
+// here instead of surfacing at render time.
+function checkUserTemplates(root) {
+  let findings;
+  try {
+    // The shipped baseline is the checkout being diagnosed, when it has one. A
+    // --target that holds only user data has no templates/, so the executing
+    // checkout's own default stays the baseline there.
+    const shipped = join(codeRoot, 'templates');
+    findings = auditUserTemplates({
+      userDir: join(root, 'data', 'templates'),
+      ...(existsSync(join(shipped, 'cv-template.html')) ? { dir: shipped } : {}),
+    });
+  } catch (err) {
+    return { warn: true, label: `data/templates: could not be audited (${err.message})` };
+  }
+  if (findings.length === 0) return null;
+  return {
+    warn: true,
+    label: `data/templates: ${findings.length} template${findings.length === 1 ? '' : 's'} need${findings.length === 1 ? 's' : ''} attention`,
+    fix: findings.flatMap((f) => f.problems.map((p) => {
+      const file = f.path.split(/[\\/]/).pop();
+      return p.type === 'invalid' || p.type === 'name'
+        ? `${file}: ${p.detail}`
+        : `${file}: lacks ${p.missing.map((m) => `{{${m}}}`).join(', ')}, which every shipped ${f.kind === 'cv' ? 'CV' : 'cover-letter'} variant keeps`;
+    })),
+  };
+}
+
 function checkProfileShape(root) {
   const profilePath = profilePathFor(root);
   if (!existsSync(profilePath)) return null;   // the prereq check owns "absent"
@@ -1157,6 +1230,10 @@ async function main() {
   console.log('================\n');
 
   const { cli: activeCli, source: cliSource, warning: cliWarning } = resolveActiveCli();
+  // A data root inside the plugin copy is deleted on the next plugin update,
+  // so the checks that create User Layer folders and files skip it.
+  const pluginInstall = checkPluginInstall(projectRoot);
+  const userLayerWritable = !pluginInstall || pluginInstall.pass;
 
   const checks = [
     checkNodeVersion(),
@@ -1165,6 +1242,7 @@ async function main() {
     geminiNodeFloor(activeCli, process.versions.node),
     checkBillingSource(),
     checkDependencies(),
+    pluginInstall,
     checkWebDependencies(),
     checkTrackedBakFiles(codeRoot),
     checkSkillEntrypoints(codeRoot),
@@ -1177,10 +1255,10 @@ async function main() {
     checkProfileShape(projectRoot),
     checkTitleFilterConflicts(projectRoot),
     checkCvShape(projectRoot),
-    checkAutoDir('data'),
-    checkPipelineFile(),
-    checkAutoDir('output'),
-    checkAutoDir('reports'),
+    checkUserTemplates(projectRoot),
+    ...(userLayerWritable
+      ? [checkAutoDir('data'), checkPipelineFile(), checkAutoDir('output'), checkAutoDir('reports')]
+      : []),
     checkPlugins(projectRoot),
     // checkPrereq already explains the .env case when the profile is missing.
     prereqPresent(projectRoot, { path: 'config/profile.yml' }) ? checkEnvFileProfile(projectRoot) : null,
@@ -1407,6 +1485,9 @@ function checkTitleFilterConflicts(root) {
 
 function onboardingState(root) {
   const autoCopied = [];
+  // Same rule as main(): never seed User Layer files inside a plugin copy.
+  const pluginInstall = checkPluginInstall(root);
+  const userLayerWritable = !pluginInstall || pluginInstall.pass;
   const templates = [
     { target: 'modes/_profile.md', template: 'modes/_profile.template.md' },
     { target: 'modes/_custom.md', template: 'modes/_custom.template.md' },
@@ -1418,7 +1499,7 @@ function onboardingState(root) {
     const rootTemplatePath = join(root, ...template.split('/'));
     const templatePath = existsSync(rootTemplatePath) ? rootTemplatePath : join(__dirname, ...template.split('/'));
     // Diagnosis must not create user files. Copy only during explicit onboarding.
-    if (INIT_TEMPLATES && !existsSync(targetPath) && existsSync(templatePath)) {
+    if (INIT_TEMPLATES && userLayerWritable && !existsSync(targetPath) && existsSync(templatePath)) {
       try {
         mkdirSync(dirname(targetPath), { recursive: true });
         copyFileSync(templatePath, targetPath, constants.COPYFILE_EXCL);
@@ -1451,13 +1532,16 @@ function onboardingState(root) {
   const bakCheck = checkTrackedBakFiles(codeRoot);
   const skillCheck = checkSkillEntrypoints(codeRoot);
   const cvShape = checkCvShape(root);
+  const userTemplates = checkUserTemplates(root);
   const envFileProfile = checkEnvFileProfile(root);
   const warnings = [
     ...(cliWarning ? [cliWarning] : []),
+    ...(pluginInstall && !pluginInstall.pass ? [`${pluginInstall.label}\n→ ${pluginInstall.fix}`] : []),
     ...(mcpCheck?.warn ? [`${mcpCheck.label}\n→ ${[].concat(mcpCheck.fix || []).join('\n  ')}`] : []),
     ...(bakCheck.warn ? [`${bakCheck.label}\n→ ${[].concat(bakCheck.fix || []).join('\n  ')}`] : []),
     ...(skillCheck.warn ? [`${skillCheck.label}\n→ ${[].concat(skillCheck.fix || []).join('\n  ')}`] : []),
     ...(cvShape?.warn ? [`${cvShape.label}\n→ ${[].concat(cvShape.fix || []).join('\n  ')}`] : []),
+    ...(userTemplates?.warn ? [`${userTemplates.label}\n→ ${[].concat(userTemplates.fix || []).join('\n  ')}`] : []),
     ...(envFileProfile ? [`${envFileProfile.label}\n→ ${envFileProfile.fix.join('\n  ')}`] : []),
     ...unpersonalized.map((u) => `${u.path} ${u.reason} — ${u.impact}\n→ Personalize it from cv.md before running evaluations.`),
   ];

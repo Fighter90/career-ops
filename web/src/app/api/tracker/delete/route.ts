@@ -54,7 +54,9 @@ export async function POST(req: Request) {
       let err = "";
       let child;
       try {
-        child = spawn(process.execPath, args, { cwd: careerOpsRoot(), env: process.env });
+        // windowsHide: see api/doctor/route.ts — a stale inherited console
+        // kills every child with 0xC0000142 on Windows; never inherit one.
+        child = spawn(process.execPath, args, { cwd: careerOpsRoot(), env: process.env, windowsHide: true });
       } catch (e) {
         resolve({ code: 1, err: e instanceof Error ? e.message : "failed to start tracker.mjs" });
         return;

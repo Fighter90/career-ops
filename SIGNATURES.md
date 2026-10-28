@@ -206,3 +206,8 @@ public commit with a stated reason.
 - @AyunniZafirah | 2026-10-21 | id:149381795 | src:https://github.com/career-ops-hq/career-ops/discussions/5622 | n:158
 - @kunalg06 | Kunal Gaikwad | 2026-10-24 | "Help me fine Sponsorship jobs" | id:18356081 | src:https://github.com/career-ops-hq/career-ops/discussions/5808 | n:159
 - @LexLeontiev | Lex Leontiev | 2026-10-24 | "The first interview should always be human-to-human." | id:11589535 | src:https://github.com/career-ops-hq/career-ops/discussions/5816 | n:160
+- @tabishkhan72 | 2026-10-24 | id:84769629 | src:https://github.com/career-ops-hq/career-ops/discussions/5823 | n:161
+- @Priya-G-Prasad | 2026-10-25 | "Its helping me with my Job Search. Thanks" | id:174127723 | src:https://github.com/career-ops-hq/career-ops/discussions/5846 | n:162
+- @cluster2600 | Maxime Grenu | 2026-10-26 | id:69890511 | src:https://github.com/career-ops-hq/career-ops/pull/5802 | n:163
+- @ClintGallon | Clint Gallon | 2026-10-26 | "Quality over quantity" | id:12228649 | src:https://github.com/career-ops-hq/career-ops/discussions/5994 | n:164
+- @lucaci32u4 | Alexandru Iercosan-Lucaci | 2026-10-28 | "Operational excellence for the job search" | id:43639458 | src:https://github.com/career-ops-hq/career-ops/discussions/6147 | n:165

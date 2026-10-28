@@ -7,6 +7,7 @@ import { CompanyLogo } from "@/components/company-logo";
 import { CostBadge } from "@/components/cost/cost-badge";
 import { cn } from "@/lib/cn";
 import { formatRunCostEstimate } from "@/lib/run-cost-estimate.mjs";
+import { EvaluationOptions } from "@/components/evaluation-options";
 
 export type ShortItem = { url: string; company: string; role: string };
 
@@ -15,6 +16,8 @@ export type ShortItem = { url: string; company: string; role: string };
 // shown BEFORE the click and gated behind an explicit confirm (never spend by surprise).
 export function ShortlistTray({
   items,
+  sections,
+  onSectionsChange,
   estimate,
   hasCli,
   onRemove,
@@ -22,6 +25,8 @@ export function ShortlistTray({
   onScore,
 }: {
   items: ShortItem[];
+  sections: string[];
+  onSectionsChange: (next: string[]) => void;
   estimate: { tokens?: number; usd?: number };
   hasCli: boolean;
   onRemove: (url: string) => void;
@@ -33,12 +38,17 @@ export function ShortlistTray({
   if (items.length === 0) return null;
 
   const n = items.length;
-  const costText = formatRunCostEstimate(estimate);
+  const costText = formatRunCostEstimate(estimate, "No estimate for this selection yet");
 
   return (
     <div className="fixed inset-x-0 bottom-0 z-30 sm:bottom-4">
       <div className="mx-auto max-w-3xl sm:px-6">
         <div className="border-t border-border bg-surface shadow-lg shadow-black/10 sm:rounded-2xl sm:border">
+          {confirming && (
+            <div className="max-h-[55vh] overflow-y-auto border-b border-border px-3 py-3 sm:px-4">
+              <EvaluationOptions sections={sections} onChange={onSectionsChange} />
+            </div>
+          )}
           {/* expandable saved-items list */}
           {open && (
             <ul className="max-h-64 divide-y divide-border overflow-y-auto px-3 py-1">

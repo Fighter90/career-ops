@@ -72,6 +72,8 @@ test("spawnGeneratePdf: clean exit -> ok:true, invokes generate-pdf.mjs with --a
   assert.match(calls[0].args[0], /generate-pdf\.mjs$/);
   assert.deepEqual(calls[0].args.slice(1), ["/root/x.html", "/root/output/x.pdf", "--format=letter", "--report=018", "--allow-reorder"]);
   assert.equal(calls[0].opts.cwd, "/root");
+  // No console to inherit: a stale one kills the child on Windows (#3809)
+  assert.equal(calls[0].opts.windowsHide, true);
 });
 
 test("spawnGeneratePdf: non-zero exit -> ok:false, stderr surfaced", async () => {
@@ -102,7 +104,8 @@ test("spawnGeneratePdf: spawn error -> ok:false, descriptive stderr", async () =
 test("markTrackerReady: clean exit with JSON stdout -> ok:true, data parsed", async () => {
   // Given mark-pdf-ready.mjs succeeds and prints a --json payload
   const stdout = JSON.stringify({ changed: true, num: 5, company: "Acme" });
-  const spawnFn = () => fakeChild({ exitCode: 0, stdout });
+  const calls = [];
+  const spawnFn = (execPath, args, opts) => { calls.push({ execPath, args, opts }); return fakeChild({ exitCode: 0, stdout }); };
 
   // When marking the tracker ready
   const result = await markTrackerReady({ spawnFn, execPath: "node", root: "/root", reportNum: "5" });
@@ -111,6 +114,8 @@ test("markTrackerReady: clean exit with JSON stdout -> ok:true, data parsed", as
   assert.equal(result.ok, true);
   assert.equal(result.code, 0);
   assert.deepEqual(result.data, { changed: true, num: 5, company: "Acme" });
+  // and launched without a console to inherit (#3809)
+  assert.equal(calls[0].opts.windowsHide, true);
 });
 
 test("markTrackerReady: failure exit with parseable --json error -> data.error available", async () => {

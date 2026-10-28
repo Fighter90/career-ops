@@ -205,6 +205,9 @@ function runScanner(
     const child = spawn(process.execPath, args, {
       cwd: careerOpsRoot(),
       env: { ...process.env, CAREER_OPS_PORTALS: tempPortals },
+      // windowsHide: see api/doctor/route.ts — a stale inherited console kills
+      // every child with 0xC0000142 on Windows; never inherit one.
+      windowsHide: true,
     });
 
     const { offers, seen } = sink;

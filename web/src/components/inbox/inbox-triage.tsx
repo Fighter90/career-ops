@@ -14,10 +14,11 @@ import { ShortlistTray, type ShortItem } from "./shortlist-tray";
 import { cn } from "@/lib/cn";
 import { estimateRunCost } from "@/lib/run-cost-estimate.mjs";
 import { createInboxSkipActions, queueInboxSkip } from "@/lib/inbox-skip-client.mjs";
+import { useEvaluationOptions } from "@/components/evaluation-options";
+import { CONFIG_KEY, subscribeConfig } from "@/lib/config-events.mjs";
 
 const SHORTLIST_KEY = "career-ops:shortlist";
 const HIDDEN_KEY = "career-ops:hidden";
-const CONFIG_KEY = "career-ops:config";
 const BATCH = 20;
 type UndoNotice = { label: string; fn: () => Promise<void>; busy?: boolean; error?: string };
 
@@ -28,6 +29,7 @@ type UndoNotice = { label: string; fn: () => Promise<void>; busy?: boolean; erro
 export function InboxTriage({ inbox }: { inbox: InboxJob[] }) {
   const router = useRouter();
   const { jobs, startJob } = useJobs();
+  const { sections, setSections } = useEvaluationOptions();
   // Serialize skip/undo per URL so a fast Undo cannot lose the race to Skip.
   const skipChain = useRef(new Map<string, Promise<void>>());
   const undoRunning = useRef(new Set<UndoNotice["fn"]>());
@@ -62,13 +64,23 @@ export function InboxTriage({ inbox }: { inbox: InboxJob[] }) {
         const pending = new Set(inbox.map((j) => j.url));
         setHidden(urls.filter((u) => pending.has(u)));
       }
-      const c = localStorage.getItem(CONFIG_KEY);
-      setHasCli(!!(c && JSON.parse(c).cliId));
     } catch {
       /* ignore */
     }
     setLoaded(true);
     // First SSR inbox only — later refreshes prune via the inbox effect below.
+  }, []);
+  useEffect(() => {
+    function read() {
+      try {
+        const raw = localStorage.getItem(CONFIG_KEY);
+        setHasCli(!!(raw && JSON.parse(raw).cliId));
+      } catch {
+        setHasCli(false);
+      }
+    }
+    read();
+    return subscribeConfig(window, read);
   }, []);
   useEffect(() => {
     if (loaded) try { localStorage.setItem(SHORTLIST_KEY, JSON.stringify(shortlist)); } catch { /* quota */ }
@@ -234,13 +246,13 @@ export function InboxTriage({ inbox }: { inbox: InboxJob[] }) {
 
   const estimate = useMemo(() => {
     if (shortlist.length === 0) return {};
-    return estimateRunCost(jobs, "evaluate", shortlist.length);
-  }, [jobs, shortlist.length]);
+    return estimateRunCost(jobs, "evaluate", shortlist.length, sections);
+  }, [jobs, shortlist.length, sections]);
 
   const scoreShortlist = () => {
     const batchId = `shortlist-${Date.now()}`;
     for (const it of shortlist) {
-      startJob({ title: `Score · ${it.company}`, subtitle: it.role, kind: "evaluate", input: it.url, page: "/pipeline", batchId });
+      startJob({ title: `Score · ${it.company}`, subtitle: it.role, kind: "evaluate", input: it.url, page: "/pipeline", batchId, evaluationSections: sections });
     }
     setShortlist([]); // sent — the rows flip to Scoring… → badge via scoreByUrl
   };
@@ -352,6 +364,8 @@ export function InboxTriage({ inbox }: { inbox: InboxJob[] }) {
 
       <ShortlistTray
         items={shortlist}
+        sections={sections}
+        onSectionsChange={setSections}
         estimate={estimate}
         hasCli={hasCli}
         onRemove={(url) => setShortlist((s) => s.filter((x) => x.url !== url))}

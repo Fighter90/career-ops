@@ -25,7 +25,9 @@ export async function GET() {
   if (!fs.existsSync(script)) return Response.json({ available: false, stats: null });
 
   const stdout = await new Promise<string>((resolve) => {
-    execFile("node", [script], { cwd: careerOpsRoot(), timeout: 20_000, maxBuffer: 8 << 20 }, (err, out) =>
+    // process.execPath + windowsHide: see api/doctor/route.ts — a stale inherited
+    // console kills every child with 0xC0000142 on Windows; never inherit one.
+    execFile(process.execPath, [script], { cwd: careerOpsRoot(), timeout: 20_000, maxBuffer: 8 << 20, windowsHide: true }, (err, out) =>
       resolve(err ? "" : out || ""),
     );
   });

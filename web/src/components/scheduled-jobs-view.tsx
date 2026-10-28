@@ -297,7 +297,7 @@ export function ScheduledJobsView() {
       {filteredJobs.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-border p-12 text-center">
           <CalendarClock className="mx-auto size-8 text-faint" />
-          <h3 className="mt-3 text-sm font-semibold text-foreground">No scheduled scans found</h3>
+          <h2 className="mt-3 text-sm font-semibold text-foreground">No scheduled scans found</h2>
           <p className="mt-1 text-xs text-muted">Create a new scan to start automatically discovering matching jobs.</p>
           <button
             type="button"

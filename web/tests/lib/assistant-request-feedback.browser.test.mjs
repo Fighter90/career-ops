@@ -58,7 +58,7 @@ test("request feedback is transition-only, quiet when closed and user-navigated"
   const input = page.getByRole("textbox", { name: "Message to assistant", exact: true });
   const status = page.getByRole("status", { name: "Assistant request status", exact: true });
   const latest = page.getByRole("group", { name: "Latest assistant reply", exact: true });
-  const open = page.getByRole("button", { name: "Open assistant", exact: true });
+  const open = page.getByRole("button", { name: "Ask the assistant", exact: true });
   async function until(check) {
     for (let i = 0; i < 200; i++) { if (await check()) return; await new Promise((resolve) => setTimeout(resolve, 25)); }
     assert.fail("expected UI state not reached");

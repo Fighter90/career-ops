@@ -264,7 +264,7 @@ export function FollowupsView() {
           <table className="w-full min-w-[880px] text-sm">
             <thead className="bg-surface/60 text-left text-xs uppercase tracking-wide text-faint">
               <tr>
-                <th className="w-8 px-2 py-2.5" aria-label="Expand" />
+                <th className="w-8 px-2 py-2.5"><span className="sr-only">Expand</span></th>
                 {COLUMNS.map((c) => {
                   const active = sortKey === c.key;
                   return (
@@ -457,6 +457,7 @@ function FollowupRow({
             <button
               type="button"
               onClick={onLog}
+              aria-label={`Log follow-up for ${e.company}`}
               title="Log a follow-up (date, channel, contact, notes)"
               className="rounded-md px-2 py-1 text-xs font-medium text-muted transition-colors hover:bg-brand-soft hover:text-brand"
             >
@@ -465,7 +466,7 @@ function FollowupRow({
             <button
               type="button"
               onClick={onPin}
-              aria-label={e.nextOverride ? `Change next follow-up date for ${e.company}` : `Set next follow-up date for ${e.company}`}
+              aria-label={`Next date for ${e.company}`}
               title={e.nextOverride ? `Next date pinned to ${e.nextOverride} — change or clear` : "Pin a custom next follow-up date"}
               className={cn(
                 "rounded-md p-1 transition-colors hover:bg-brand-soft hover:text-brand",

@@ -14,6 +14,7 @@ import { cn } from "@/lib/cn";
 import { CadenceSettings } from "@/components/followups/cadence-settings";
 import { persistCliId, readSavedCliId } from "@/lib/saved-cli";
 import { keepIfInstalled, pickDefaultInstalled } from "@/lib/cli-pick.mjs";
+import { CONFIG_KEY as STORAGE_KEY, writeConfig } from "@/lib/config-events.mjs";
 
 type Cli = {
   id: string;
@@ -33,7 +34,6 @@ const PROVIDERS = [
   { id: "openrouter", label: "OpenRouter" },
 ] as const;
 
-const STORAGE_KEY = "career-ops:config";
 
 export function ConfigForm() {
   const [mode, setMode] = useState<Mode>("cli");
@@ -69,31 +69,32 @@ export function ConfigForm() {
       .then((d) => {
         const list: Cli[] = d.clis ?? [];
         setClis(list);
-        // Highlight + persist the default installed CLI when Config was never
-        // saved. Highlight-only looks configured while jobs still read empty
-        // localStorage -- so whatever is rendered as selected must be written.
-        // This applies at ANY installed count: restricting it to a SOLE install
-        // left every multi-CLI machine (claude + codex, say) in exactly the
-        // broken state the highlight was meant to avoid.
         setCliId((prev) => {
           // A restored id whose CLI is no longer installed must not stick: it
           // would stay selected and save() would write it straight back, so
           // "open Config and click Save config" could never clear it (#4012).
           if (keepIfInstalled(prev, list)) return prev;
-          const auto = pickDefaultInstalled(list, typeof d.remembered === "string" ? d.remembered : null);
-          if (!auto) return "";
-          if (!readSavedCliId()) persistCliId(auto);
-          return auto;
+          return pickDefaultInstalled(list, typeof d.remembered === "string" ? d.remembered : null) ?? "";
         });
       })
       .catch(() => setClis([]));
   }, []);
 
+  // Persist the highlighted CLI when Config was never saved. Highlight-only
+  // looks configured while jobs still read empty localStorage, so whatever is
+  // rendered as selected must be written, at ANY installed count. The write
+  // lives here and not in the setCliId updater: React runs updaters during
+  // render, and the config-changed event it fires makes AssistantConsole set
+  // state mid-render.
+  useEffect(() => {
+    if (clis && cliId && !readSavedCliId()) persistCliId(cliId);
+  }, [clis, cliId]);
+
   function save() {
     // The API key is deliberately NOT persisted: nothing reads it yet (the
     // key/manual panel is unwired) and a secret must never sit in clear-text
     // localStorage. Keys belong in the user's own CLI/provider config.
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ mode, cliId, provider, logos }));
+    writeConfig(localStorage, window, { mode, cliId, provider, logos });
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   }

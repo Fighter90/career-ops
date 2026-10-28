@@ -105,6 +105,9 @@ export function ReportView({
           </h1>
         </div>
         {app?.role && <p className="mt-1 text-muted">{app.role}</p>}
+        {meta?.fields.find((field) => field.label === "Evaluation scope") && (
+          <p className="mt-2 text-xs text-muted">{meta.fields.find((field) => field.label === "Evaluation scope")?.value}</p>
+        )}
 
         <div className="mt-4 flex flex-wrap items-center gap-2.5">
           {app && <StatusSelect n={id} current={app.status} />}

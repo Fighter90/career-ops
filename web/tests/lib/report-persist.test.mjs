@@ -246,6 +246,13 @@ test("trackerTsvLine: header names sit on the same cells merge-tracker reads", (
 
 test("persistEvaluation: writes report + TSV, reserves, merges, releases", async () => {
   const root = mkdtempSync(join(tmpdir(), "co-evalpersist-"));
+  mkdirSync(join(root, "data"));
+  const pipeline = `## Pending
+- [ ] https://acme.com/jobs/7 | Acme | Engineer
+- [ ] https://acme.com/jobs/8 | Acme | Engineer
+`;
+  writeFileSync(join(root, "data", "pipeline.md"), pipeline);
+  writeFileSync(join(root, "pipeline-lock.mjs"), `export { withPipelineLock } from ${JSON.stringify(new URL("../../../pipeline-lock.mjs", import.meta.url).href)};\n`);
   const { spawnFn, calls } = makeRouterSpawn({
     "reserve-report-num.mjs": (args) => args.includes("--release")
       ? { exitCode: 0 }
@@ -262,6 +269,9 @@ test("persistEvaluation: writes report + TSV, reserves, merges, releases", async
     assert.equal(result.ok, true);
     assert.equal(result.num, "035");
     assert.equal(result.reportFile, "035-acme-ai-2026-08-04.md");
+    assert.deepEqual(result.warnings, []);
+    assert.equal(readFileSync(join(root, "data", "pipeline.md"), "utf8"), pipeline.replace("- [ ] https://acme.com/jobs/7", "- [x] https://acme.com/jobs/7"));
+    assert.equal(existsSync(join(root, "data", "pipeline.md.lock")), false);
 
     const reportPath = join(root, "reports", "035-acme-ai-2026-08-04.md");
     const tsvPath = join(root, "batch", "tracker-additions", "035-acme-ai.tsv");
@@ -287,6 +297,34 @@ test("persistEvaluation: writes report + TSV, reserves, merges, releases", async
     assert.equal(payload.reportFile, "035-acme-ai-2026-08-04.md");
     assert.equal(payload.url, "https://acme.com/jobs/7");
     assert.ok(calls.every((c) => c.opts.cwd === root));
+    // No core script inherits the server's console: a stale one kills the
+    // child at DLL init on Windows with no output at all (#3809).
+    assert.ok(calls.every((c) => c.opts.windowsHide === true), "every persist step launches with windowsHide");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("persistEvaluation: a focused selection is recorded in the report and tracker notes", async () => {
+  const root = mkdtempSync(join(tmpdir(), "co-evalpersist-focused-"));
+  const { spawnFn } = makeRouterSpawn({
+    "reserve-report-num.mjs": (args) => args.includes("--release") ? { exitCode: 0 } : { exitCode: 0, stdout: "035\n" },
+    "persist-evaluation-report.mjs": writerSpec(),
+    "merge-tracker.mjs": { exitCode: 0 },
+  });
+  try {
+    const archive = "\n## Job Description (archived verbatim)\n**Evaluation scope:** This is literal posting text.\n";
+    const markdown = REPORT.replace("\n\n", "\n\n**Evaluation scope:** Focused — interview.\n\n") + archive;
+    const result = await persistEvaluation({ spawnFn, execPath: "node", root, markdown, url: "https://jobs.example.test/7", today: "2026-10-25", evaluationSections: ["summary"] });
+    assert.equal(result.ok, true);
+    const saved = readFileSync(join(root, "reports", result.reportFile), "utf8");
+    assert.match(saved, /\*\*Evaluation scope:\*\* Focused — summary\./);
+    assert.equal((saved.match(/\*\*Evaluation scope:/g) || []).length, 2);
+    assert.ok(!saved.includes("Focused — interview"));
+    assert.ok(saved.includes(archive));
+    assert.match(readFileSync(join(root, "batch", "tracker-additions", "035-acme-ai.tsv"), "utf8"), /Focused evaluation: summary/);
+    const refused = await persistEvaluation({ spawnFn: () => assert.fail("invalid selections must not reserve a report"), execPath: "node", root, markdown: REPORT, url: "https://jobs.example.test/7", today: "2026-10-25", evaluationSections: ["unknown"] });
+    assert.equal(refused.ok, false);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -334,6 +372,9 @@ test("persistEvaluation: reserve failure does not write files", async () => {
 
 test("persistEvaluation: merge failure still releases the sentinel", async () => {
   const root = mkdtempSync(join(tmpdir(), "co-evalpersist-"));
+  mkdirSync(join(root, "data"));
+  const pipeline = "## Pending\n- [ ] https://acme.com/jobs/7 | Acme | Engineer\n";
+  writeFileSync(join(root, "data", "pipeline.md"), pipeline);
   const { spawnFn, calls } = makeRouterSpawn({
     "reserve-report-num.mjs": (args) => args.includes("--release")
       ? { exitCode: 0 }
@@ -348,6 +389,7 @@ test("persistEvaluation: merge failure still releases the sentinel", async () =>
     });
     assert.equal(result.ok, false);
     assert.match(result.error, /merge-tracker/);
+    assert.equal(readFileSync(join(root, "data", "pipeline.md"), "utf8"), pipeline, "an unsuccessful save must leave the discovery pending");
     assert.ok(calls.some((c) => c.args.includes("--release")));
   } finally {
     rmSync(root, { recursive: true, force: true });

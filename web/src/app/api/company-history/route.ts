@@ -24,10 +24,12 @@ export async function GET(req: Request) {
   if (!fs.existsSync(script)) return Response.json({ available: false, reason: "no-script", card: null });
 
   const stdout = await new Promise<string>((resolve) => {
+    // process.execPath + windowsHide: see api/doctor/route.ts — a stale inherited
+    // console kills every child with 0xC0000142 on Windows; never inherit one.
     execFile(
-      "node",
+      process.execPath,
       [script, "--company", company],
-      { cwd: careerOpsRoot(), timeout: 20_000, maxBuffer: 8 << 20 },
+      { cwd: careerOpsRoot(), timeout: 20_000, maxBuffer: 8 << 20, windowsHide: true },
       // stdout regardless of exit status: the script reports a missing source
       // inside its payload rather than by failing, and that payload is what the
       // card needs in order to say "not checked" instead of "nothing found".
