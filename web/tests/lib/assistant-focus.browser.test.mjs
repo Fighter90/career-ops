@@ -63,7 +63,7 @@ test("Assistant keyboard continuation, semantic context and modeless behavior", 
     await target.waitFor();
     await tabTo(page, target);
     await page.keyboard.press("Enter");
-    await page.locator("textarea").waitFor();
+    await composer(page).waitFor();
     assert.equal(await panel(page).count(), 1);
   }
   const page = await pageFor();
@@ -113,7 +113,7 @@ test("Assistant keyboard continuation, semantic context and modeless behavior", 
   assert.equal(await focused(composer(page)), true);
   assert.equal(requests[1].message, "Unsent draft");
   // Leave the modeless panel: replies and repeated open events cannot pull back.
-  const search = page.getByRole("textbox", { name: "Search company or role…", exact: true });
+  const search = page.getByRole("searchbox", { name: "Search applications", exact: true });
   await tabTo(page, search);
   await page.keyboard.press("Escape");
   assert.equal(await panel(page).count(), 1);

@@ -58,11 +58,13 @@ import path from 'path';
 import { loadYaml } from './lib/yaml-document.mjs';
 
 import { makeHttpCtx } from './providers/_http.mjs';
+import { formatHttpCacheWindow, httpCacheStats, resolveHttpCacheTtlMs, withHttpCache } from './providers/_http-cache.mjs';
 import { buildTrustValidator } from './providers/_trust-validator.mjs';
 import { loadProviders, resolveProvider } from './providers/_registry.mjs';
 import { openProviderIdCache, PROVIDER_ID_CACHE_DIR } from './provider-id-cache.mjs';
 import { mergeProviderPlugins } from './plugins/_engine.mjs';
 import { classifyFetchError } from './verify-portals.mjs';
+import { portalTopLevelTypos } from './validate-portals.mjs';
 import { fingerprintText, findCrossListings } from './fingerprint-core.mjs';
 import { computeListingFingerprint } from './listing-fingerprint.mjs';
 import { resolveColumns, parseTrackerRow, normalizeTextKey, extractReqNumber, REQ_NUMBER_RE } from './tracker-parse.mjs';
@@ -3454,13 +3456,14 @@ export async function appendToPipeline(offers, { pipelinePath = PIPELINE_PATH } 
 // Both surface as rows that silently stop counting, because every reader skips
 // a malformed line quietly.
 //
-// `alreadyLocked` is for the one caller whose APPEND is decided by a READ of
-// this same file — check-liveness's expired-verdict recorder, which must hold
-// the lock across both or its plan is a check-then-act (a concurrent scanner
-// appending in between makes it write a row that is no longer needed). The
-// lock is not reentrant, so that caller cannot simply wrap this call; it takes
-// the lock itself and passes true. Everything else must leave it alone: true
-// with no lock actually held reintroduces both races described above.
+// `alreadyLocked` is for the callers whose APPEND is decided by a READ of this
+// same file — check-liveness's expired-verdict recorder and
+// appendUnrecordedToScanHistory below — which must hold the lock across both
+// or their plan is a check-then-act (a concurrent scanner appending in between
+// makes them write a row that is no longer needed). The lock is not reentrant,
+// so such a caller cannot simply wrap this call; it takes the lock itself and
+// passes true. Everything else must leave it alone: true with no lock actually
+// held reintroduces both races described above.
 export async function appendToScanHistory(offers, date, status = 'added', { alreadyLocked = false } = {}) {
   const write = () => {
     // Ensure file + header exist. The header is SCAN_HISTORY_COLUMNS, the same
@@ -3478,6 +3481,27 @@ export async function appendToScanHistory(offers, date, status = 'added', { alre
 
   if (alreadyLocked) write();
   else await withPipelineLock(SCAN_HISTORY_PATH, write);
+}
+
+/**
+ * appendToScanHistory for a skip bucket a scanner refills on every run: only
+ * the offers not yet recorded under `status` are written (unrecordedOffers),
+ * so the file grows with new postings rather than with scans (#2695). This is
+ * how scan.mjs records its own skips; the scanners beside it appended theirs
+ * straight, re-recording every skipped posting on every run.
+ *
+ * @param {Array<object>} offers
+ * @param {string} date
+ * @param {string} status
+ * @returns {Promise<number>} rows written
+ */
+export async function appendUnrecordedToScanHistory(offers, date, status) {
+  if (offers.length === 0) return 0;
+  return withPipelineLock(SCAN_HISTORY_PATH, async () => {
+    const fresh = unrecordedOffers(offers, status, readIfExists(SCAN_HISTORY_PATH));
+    if (fresh.length > 0) await appendToScanHistory(fresh, date, status, { alreadyLocked: true });
+    return fresh.length;
+  });
 }
 
 // ── Company blacklist (#1742) ───────────────────────────────────────
@@ -4185,6 +4209,16 @@ async function main() {
     process.exit(1);
   }
   const config = rawConfig && typeof rawConfig === 'object' ? rawConfig : {};
+  const typos = portalTopLevelTypos(config);
+  if (typos.length > 0) {
+    for (const typo of typos) {
+      console.error(
+        `Error: ${PORTALS_PATH}: unknown top-level key "${typo.key}" — did you mean "${typo.suggestion}"? The misspelled key is ignored, so this scan would report success without applying it.`,
+      );
+    }
+    console.error('Example: node scan.mjs --dry-run --json');
+    process.exit(1);
+  }
   const companies = Array.isArray(config.tracked_companies) ? config.tracked_companies : [];
   const boards = Array.isArray(config.job_boards) ? config.job_boards : [];
   const titleFilter = buildTitleFilter(config.title_filter);
@@ -4750,7 +4784,25 @@ async function main() {
     }
   });
 
-  await parallelFetch(tasks, CONCURRENCY, progressTicker(tasks.length));
+  const companyFetches = () => parallelFetch(tasks, CONCURRENCY, progressTicker(tasks.length));
+  if (process.env.CAREER_OPS_HTTP_CACHE === '0') {
+    await companyFetches();
+  } else {
+    const ttlMs = resolveHttpCacheTtlMs(process.env.CAREER_OPS_HTTP_CACHE_TTL_MS);
+    await withHttpCache({
+      dir: path.join(DATA_ROOT, 'data', 'cache', 'http'),
+      ttlMs,
+      write: !dryRun,
+    }, async () => {
+      await companyFetches();
+      const stats = httpCacheStats();
+      if (!stats || (stats.hits === 0 && stats.revalidated === 0)) return;
+      const parts = [];
+      if (stats.hits > 0) parts.push(`reused ${stats.hits} board responses saved in the last ${formatHttpCacheWindow(ttlMs)}`);
+      if (stats.revalidated > 0) parts.push(`rechecked ${stats.revalidated} older board responses`);
+      process.stderr.write(`scan: ${parts.join(', and ')}. Set CAREER_OPS_HTTP_CACHE=0 to always download.\n`);
+    });
+  }
   // --dry-run leaves no trace, this cache included.
   if (!dryRun) {
     try {
