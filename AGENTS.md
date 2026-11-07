@@ -92,7 +92,7 @@ If yes → `node update-system.mjs apply --confirm`. If no → `node update-syst
 
 ## What is career-ops
 
-AI-powered, CLI-agnostic job search automation: pipeline tracking, offer evaluation, CV generation, portal scanning, batch processing. Runs on any AI coding CLI following the [open agent skill standard](https://agentskills.io) (Claude Code, Cursor, Codex, OpenCode, Pi, Qwen, Copilot, Kimi, Antigravity CLI, Grok Build CLI, Hermes). Legacy Gemini API evaluation remains via `gemini-eval.mjs`.
+AI-powered, CLI-agnostic job search automation: pipeline tracking, offer evaluation, CV generation, portal scanning, batch processing. Runs on any AI coding CLI following the [open agent skill standard](https://agentskills.io) (Claude Code, Cursor, Codex, OpenCode, Pi, Oh My Pi, Qwen, Copilot, Kimi, Antigravity CLI, Grok Build CLI, Hermes). Legacy Gemini API evaluation remains via `gemini-eval.mjs`.
 
 ### Codex invocation
 
