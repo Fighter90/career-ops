@@ -38,8 +38,16 @@ ${preloadBody}`);
     delete env.CAREER_OPS_PORTALS;
     // With trusted proxy egress, the request would go through undici, past the stub.
     delete env.CAREER_OPS_TRUST_PROXY_EGRESS;
-    return spawnSync(process.execPath, ['--import', pathToFileURL(preload).href, join(ROOT, 'audit-portals.mjs'),
-      '--file', portals, ...argsFor(dir)], { cwd: ROOT, encoding: 'utf8', timeout: 20000, env });
+    return (() => {
+      const res = spawnSync(process.execPath, ['--import', pathToFileURL(preload).href, join(ROOT, 'audit-portals.mjs'),
+        '--file', portals, ...argsFor(dir)], { cwd: ROOT, encoding: 'utf8', timeout: 20000, env });
+      // Upstream added an environmental ".env is in the code folder, not the data
+      // folder" warning that fires whenever the checkout itself carries a .env while
+      // the test's data root is a temp dir — machine layout, not the behavior under
+      // test. Strip that notice before the exact-stderr assertions.
+      res.stderr = res.stderr.split('\n').filter((l) => !l.includes('.env is in the code folder')).join('\n');
+      return res;
+    })();
   } finally { rmSync(dir, { recursive: true, force: true }); }
 }
 
