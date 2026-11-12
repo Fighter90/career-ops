@@ -391,11 +391,13 @@ Default modes are in `modes/` (English). Market-specific mode sets (each include
 | Market | Dir | Evaluation / Apply | Local vocabulary (examples) |
 |--------|-----|--------------------|------------------------------|
 | German (DACH) | `modes/de/` | `angebot` / `bewerben` | 13. Monatsgehalt, Probezeit, Kündigungsfrist, AGG, Tarifvertrag |
+| Austria (English) | `modes/at/` | `offer` / `apply` | KV-Mindestgehalt, 14 Gehälter, Sonderzahlungen, Probemonat, All-in, Abfertigung Neu |
 | French (FR/BE/CH/LU) | `modes/fr/` | `offre` / `postuler` | CDI/CDD, SYNTEC, RTT, 13e mois, titres-restaurant, CSE |
 | Arabic (Middle East) | `modes/ar/` | `fursah` / `takdeem` | مكافأة نهاية الخدمة, التأمينات الاجتماعية, فترة التجربة |
 | Japanese (Japan) | `modes/ja/` | `kyujin` / `oubo` | 正社員, 賞与, みなし残業, 年俸制, 36協定 |
 | Turkish (Turkey) | `modes/tr/` | `is-ilani` / `basvuru` | SGK, kıdem tazminatı, brüt/net maaş, BES |
 | Hindi (India) | `modes/hi/` | `naukri` / `aavedan` | CTC vs. in-hand, PF/EPF, Notice period/buyout, ESOPs |
+| India (English) | `modes/in/` | `offer` / `apply` | CTC vs. in-hand, LPA, batch eligibility, CGPA/backlog cut-offs, notice period/buyout, bonds |
 | Spanish (ES/LatAm) | `modes/es/` | `oferta` / `aplicar` | Contrato indefinido, convenio, pagas extra, Seguridad Social |
 | Portuguese (BR/PT) | `modes/pt/` | `oferta` / `aplicar` | CLT, PJ, FGTS, 13º, férias, vale-refeição |
 | Italian (Italy) | `modes/it/` | `annuncio` / `candidarsi` | CCNL, tempo indeterminato, tredicesima |
